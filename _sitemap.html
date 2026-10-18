@@ -4,6 +4,8 @@ html, body {
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior-y: none;
 }
+/* Home-screen app: the static HTML has no safe-area insets yet, so keep it hidden until React hydrates (splash image covers it). */
+@media (display-mode: standalone) { html:not(.ah-ready) #root { visibility: hidden; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; } }</style><style id="react-native-stylesheet">[stylesheet-group="0"]{}
 body{margin:0;}
 button::-moz-focus-inner,input::-moz-focus-inner{border:0;padding:0;}
@@ -403,5 +405,5 @@ input::-webkit-search-cancel-button,input::-webkit-search-decoration,input::-web
 @keyframes r-1pzkwqh{0%{transform:translateY(100%);}100%{transform:translateY(0%);}}
 @keyframes r-imtty0{0%{opacity:0;}100%{opacity:1;}}
 @keyframes r-q67da2{0%{transform:translateX(-100%);}100%{transform:translateX(400%);}}
-@keyframes r-t2lo5v{0%{opacity:1;}100%{opacity:0;}}</style><link rel="icon" href="/agent-home-app/favicon.ico"/><script type="module">globalThis.__EXPO_ROUTER_HYDRATE__=true;</script></head><body><div id="root"><div class="css-g5y9jx r-13awgt0"></div></div><script src="/agent-home-app/_expo/static/js/web/__expo-metro-runtime-ed4c1cfa6193d76fc294130e42bd1916.js" defer></script><script src="/agent-home-app/_expo/static/js/web/_layout-ce3dd5324ee857549aef666e89fc8b0a.js" defer></script><script src="/agent-home-app/_expo/static/js/web/_layout-aa58557e63d45fbe05853dff5e2f09b9.js" defer></script><script src="/agent-home-app/_expo/static/js/web/__common-d24c2c98317567137cfc5fa90c2ec0b9.js" defer></script><script src="/agent-home-app/_expo/static/js/web/entry-3e10b52c88662c4c5fe1d29030d39f86.js" defer></script>
+@keyframes r-t2lo5v{0%{opacity:1;}100%{opacity:0;}}</style><link rel="icon" href="/agent-home-app/favicon.ico"/><script type="module">globalThis.__EXPO_ROUTER_HYDRATE__=true;</script></head><body><div id="root"><div class="css-g5y9jx r-13awgt0"></div></div><script src="/agent-home-app/_expo/static/js/web/__expo-metro-runtime-ed4c1cfa6193d76fc294130e42bd1916.js" defer></script><script src="/agent-home-app/_expo/static/js/web/_layout-1c3ac6d861059fb9ce0f26d4aaaf7761.js" defer></script><script src="/agent-home-app/_expo/static/js/web/_layout-aa58557e63d45fbe05853dff5e2f09b9.js" defer></script><script src="/agent-home-app/_expo/static/js/web/__common-d24c2c98317567137cfc5fa90c2ec0b9.js" defer></script><script src="/agent-home-app/_expo/static/js/web/entry-99727bf5c8924d9a08bfe7f6e66fa915.js" defer></script>
 </body></html>
