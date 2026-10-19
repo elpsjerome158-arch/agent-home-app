@@ -1,6 +1,6 @@
 {
  "schema": "brain-insights/1",
- "generated_at": "2026-10-18 19:06:55 CT",
+ "generated_at": "2026-10-18 20:18:53 CT",
  "insights": [
   {
    "text": "All 4 weekend crypto setups rejected for ~1.9% spread plus downtrend (P-001–P-004)",
@@ -23,7 +23,7 @@
    "priority": 2
   },
   {
-   "text": "pump.fun feed: 82/87 scanned coins FAIL filters",
+   "text": "pump.fun feed: 100/105 scanned coins FAIL filters",
    "source": "agent-home-ios/.pages/pumpfun-feed.json verdicts",
    "priority": 3
   },
