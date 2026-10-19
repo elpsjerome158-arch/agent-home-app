@@ -2,9 +2,9 @@
    - Hashed bundles/fonts/images under _expo/ & assets/: cache-first (immutable).
    - HTML pages: network-first, fall back to cached page, then cached start page.
    - JSON feeds: network-first, fall back to last cached copy (desk.enc.json stays encrypted at rest). */
-const V = 'ah-v1';
+const V = 'ah-v2';
 const SCOPE = new URL(self.registration.scope).pathname; // e.g. /agent-home-app/
-const SHELL = [SCOPE, SCOPE + 'manifest.webmanifest', SCOPE + 'apple-touch-icon.png', SCOPE + 'icon-192.png'];
+const SHELL = [SCOPE, SCOPE + 'manifest.webmanifest', SCOPE + 'apple-touch-icon.png?v=jerome1', SCOPE + 'icon-192.png?v=jerome1'];
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(V).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', (e) => {
   e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== V).map((k) => caches.delete(k)))).then(() => self.clients.claim()));
