@@ -1,14 +1,14 @@
 {
  "schema": "brain-insights/1",
- "generated_at": "2026-10-19 08:44:01 CT",
+ "generated_at": "2026-10-19 12:17:36 CT",
  "insights": [
   {
-   "text": "All 4 weekend crypto setups rejected for ~1.9% spread plus downtrend (P-001–P-004)",
+   "text": "All 5 weekend crypto setups rejected for ~1.9% spread plus downtrend (P-001–P-005)",
    "source": "trade-journal/paper-ledger.json setups",
    "priority": 1
   },
   {
-   "text": "3 of 4 rejected setups have no decision score (P-002, P-003, P-004); scheduled cycles don't poll Setup Scout, so Devil's Advocate/Risk Coach never review",
+   "text": "4 of 5 rejected setups have no decision score (P-002, P-003, P-004, P-005); scheduled cycles don't poll Setup Scout, so Devil's Advocate/Risk Coach never review",
    "source": "trade-journal/paper-ledger.json setups.decision_score",
    "priority": 1
   },
@@ -18,12 +18,12 @@
    "priority": 2
   },
   {
-   "text": "IT crash log: 6 entries, 2 open (Phone app data behind: last Pages publish 12:14 AM CT (caa4f59); since then Desk sources (`trading_desk.json` 4:13 AM, desk playbook 12:24 AM) and Meme sources (pumpfun feed + paper account 7:54 AM) changed ",
+   "text": "IT crash log: 8 entries, 2 open (`/workspace/agent-home-live.json` still being written after Unity Agent Home feed was approved retired)",
    "source": "it/crash-log.md",
    "priority": 2
   },
   {
-   "text": "pump.fun feed: 223/235 scanned coins FAIL filters",
+   "text": "pump.fun feed: 249/262 scanned coins FAIL filters",
    "source": "agent-home-ios/.pages/pumpfun-feed.json verdicts",
    "priority": 3
   },
@@ -33,7 +33,7 @@
    "priority": 3
   },
   {
-   "text": "RSI(14) daily at 2026-10-19 04:50 CT: 7 overbought (ABBV, BOXX, COST, CVI, KO), 28 oversold (AIPI, APLD, ARR, ASTS, AVAV) of 188",
+   "text": "RSI(14) daily at 2026-10-19 08:46 CT: 7 overbought (ABBV, BOXX, COST, CVI, KO), 28 oversold (AIPI, APLD, ARR, ASTS, AVAV) of 188",
    "source": "brain/raw/rsi/rsi-2026-10-19.json",
    "priority": 3
   },
