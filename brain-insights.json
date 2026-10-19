@@ -1,0 +1,46 @@
+{
+ "schema": "brain-insights/1",
+ "generated_at": "2026-10-18 19:03:56 CT",
+ "insights": [
+  {
+   "text": "All 4 weekend crypto setups rejected for ~1.9% spread plus downtrend (P-001–P-004)",
+   "source": "trade-journal/paper-ledger.json setups",
+   "priority": 1
+  },
+  {
+   "text": "3 of 4 rejected setups have no decision score (P-002, P-003, P-004); scheduled cycles don't poll Setup Scout, so Devil's Advocate/Risk Coach never review",
+   "source": "trade-journal/paper-ledger.json setups.decision_score",
+   "priority": 1
+  },
+  {
+   "text": "Perps Scout: SOL/BTC/ETH all ranging; no desk packet sent (no regime change, no price within 1.5% of 7d extremes, no confirmed fu)",
+   "source": "perp-scout/regime.json",
+   "priority": 2
+  },
+  {
+   "text": "IT crash log: 4 entries, 1 open (Agent Home live feed stale (~47h): `live.json` last `updated)",
+   "source": "it/crash-log.md",
+   "priority": 2
+  },
+  {
+   "text": "pump.fun feed: 60/60 scanned coins FAIL filters",
+   "source": "agent-home-ios/.pages/pumpfun-feed.json verdicts",
+   "priority": 3
+  },
+  {
+   "text": "24h: SOL 104.04 (+1.04%), BTC 82,075.0 (+0.98%), ETH 2,405.2 (+0.44%)",
+   "source": "perp-scout/latest.json",
+   "priority": 3
+  },
+  {
+   "text": "RSI(14) daily at 2026-10-18 18:35 CT: 7 overbought (ABBV, BOXX, COST, CVI, KO), 28 oversold (AIPI, APLD, ARR, ASTS, AVAV) of 188",
+   "source": "brain/raw/rsi/rsi-2026-10-18.json",
+   "priority": 3
+  },
+  {
+   "text": "Desk graded trades 0/20 toward first review; live gate needs 50",
+   "source": "trade-journal/paper-ledger.json milestone",
+   "priority": 4
+  }
+ ]
+}
