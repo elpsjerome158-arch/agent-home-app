@@ -1,6 +1,6 @@
 {
  "schema": "brain-insights/1",
- "generated_at": "2026-10-20 08:56:54 CT",
+ "generated_at": "2026-10-20 12:17:55 CT",
  "insights": [
   {
    "text": "All 7 weekend crypto setups rejected for ~1.9% spread plus downtrend (P-001–P-007)",
@@ -10,6 +10,16 @@
   {
    "text": "6 of 7 rejected setups have no decision score (P-002, P-003, P-004, P-005, P-006, P-007); scheduled cycles don't poll Setup Scout, so Devil's Advocate/Risk Coach never review",
    "source": "trade-journal/paper-ledger.json setups.decision_score",
+   "priority": 1
+  },
+  {
+   "text": "NEEDS JEROME — STALE: no baseline RSI snapshot for the 2026-10-19 16:41 CT slot (checked 2026-10-20 08:50:34 CT); last valid result stays in use, labeled stale",
+   "source": "brain/state/rsi-compare/alerts.jsonl",
+   "priority": 1
+  },
+  {
+   "text": "NEEDS JEROME — STALE: no baseline RSI snapshot for the 2026-10-19 20:41 CT slot (checked 2026-10-20 08:50:34 CT); last valid result stays in use, labeled stale",
+   "source": "brain/state/rsi-compare/alerts.jsonl",
    "priority": 1
   },
   {
@@ -23,24 +33,14 @@
    "priority": 2
   },
   {
-   "text": "pump.fun feed: 286/300 scanned coins FAIL filters",
+   "text": "pump.fun feed: 290/300 scanned coins FAIL filters",
    "source": "agent-home-ios/.pages/pumpfun-feed.json verdicts",
    "priority": 3
   },
   {
-   "text": "24h: SOL 104.29 (-0.37%), BTC 81,619.1 (-0.75%), ETH 2,396.44 (-0.51%)",
+   "text": "24h: SOL 105.56 (+1.17%), BTC 82,552.2 (+0.57%), ETH 2,438.04 (+1.51%)",
    "source": "perp-scout/latest.json",
    "priority": 3
-  },
-  {
-   "text": "NEEDS JEROME — STALE: no baseline RSI snapshot for the 2026-10-19 16:41 CT slot (checked 2026-10-20 08:50:34 CT); last valid result stays in use, labeled stale",
-   "source": "brain/state/rsi-compare/alerts.jsonl",
-   "priority": 9
-  },
-  {
-   "text": "NEEDS JEROME — STALE: no baseline RSI snapshot for the 2026-10-19 20:41 CT slot (checked 2026-10-20 08:50:34 CT); last valid result stays in use, labeled stale",
-   "source": "brain/state/rsi-compare/alerts.jsonl",
-   "priority": 9
   }
  ]
 }
