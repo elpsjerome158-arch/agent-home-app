@@ -1,14 +1,14 @@
 {
  "schema": "brain-insights/1",
- "generated_at": "2026-10-20 12:19:27 CT",
+ "generated_at": "2026-10-20 16:20:50 CT",
  "insights": [
   {
-   "text": "All 7 weekend crypto setups rejected for ~1.9% spread plus downtrend (P-001–P-007)",
+   "text": "All 8 weekend crypto setups rejected for ~1.9% spread plus downtrend (P-001–P-009)",
    "source": "trade-journal/paper-ledger.json setups",
    "priority": 1
   },
   {
-   "text": "6 of 7 rejected setups have no decision score (P-002, P-003, P-004, P-005, P-006, P-007); scheduled cycles don't poll Setup Scout, so Devil's Advocate/Risk Coach never review",
+   "text": "7 of 8 rejected setups have no decision score (P-002, P-003, P-004, P-005, P-006, P-007, P-009); scheduled cycles don't poll Setup Scout, so Devil's Advocate/Risk Coach never review",
    "source": "trade-journal/paper-ledger.json setups.decision_score",
    "priority": 1
   },
@@ -28,17 +28,17 @@
    "priority": 2
   },
   {
-   "text": "IT crash log: 11 entries, 2 open (Phone app data ~18h behind going into Tuesday open: last Pages publish 2:26 PM CT Oct 19 (15c60d3). Since then local sources changed but were not published: Brain `insights-public.json` 1:20 AM, `trading_de",
+   "text": "IT crash log: 11 entries, 0 open",
    "source": "it/crash-log.md",
    "priority": 2
   },
   {
-   "text": "pump.fun feed: 291/300 scanned coins FAIL filters",
+   "text": "pump.fun feed: 287/300 scanned coins FAIL filters",
    "source": "agent-home-ios/.pages/pumpfun-feed.json verdicts",
    "priority": 3
   },
   {
-   "text": "24h: SOL 105.56 (+1.17%), BTC 82,552.2 (+0.57%), ETH 2,438.04 (+1.51%)",
+   "text": "24h: SOL 105.87 (+1.52%), BTC 82,552.8 (+0.64%), ETH 2,436.2 (+1.42%)",
    "source": "perp-scout/latest.json",
    "priority": 3
   }
