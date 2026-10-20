@@ -1,14 +1,14 @@
 {
  "schema": "brain-insights/1",
- "generated_at": "2026-10-19 12:17:36 CT",
+ "generated_at": "2026-10-20 08:20:08 CT",
  "insights": [
   {
-   "text": "All 5 weekend crypto setups rejected for ~1.9% spread plus downtrend (P-001–P-005)",
+   "text": "All 6 weekend crypto setups rejected for ~1.9% spread plus downtrend (P-001–P-006)",
    "source": "trade-journal/paper-ledger.json setups",
    "priority": 1
   },
   {
-   "text": "4 of 5 rejected setups have no decision score (P-002, P-003, P-004, P-005); scheduled cycles don't poll Setup Scout, so Devil's Advocate/Risk Coach never review",
+   "text": "5 of 6 rejected setups have no decision score (P-002, P-003, P-004, P-005, P-006); scheduled cycles don't poll Setup Scout, so Devil's Advocate/Risk Coach never review",
    "source": "trade-journal/paper-ledger.json setups.decision_score",
    "priority": 1
   },
@@ -18,23 +18,23 @@
    "priority": 2
   },
   {
-   "text": "IT crash log: 8 entries, 2 open (`/workspace/agent-home-live.json` still being written after Unity Agent Home feed was approved retired)",
+   "text": "IT crash log: 11 entries, 2 open (Phone app data ~18h behind going into Tuesday open: last Pages publish 2:26 PM CT Oct 19 (15c60d3). Since then local sources changed but were not published: Brain `insights-public.json` 1:20 AM, `trading_de",
    "source": "it/crash-log.md",
    "priority": 2
   },
   {
-   "text": "pump.fun feed: 249/262 scanned coins FAIL filters",
+   "text": "pump.fun feed: 281/296 scanned coins FAIL filters",
    "source": "agent-home-ios/.pages/pumpfun-feed.json verdicts",
    "priority": 3
   },
   {
-   "text": "24h: SOL 104.74 (+1.90%), BTC 82,200.5 (+0.92%), ETH 2,408.39 (+0.58%)",
+   "text": "24h: SOL 104.46 (-0.73%), BTC 81,480.0 (-1.28%), ETH 2,394.99 (-1.10%)",
    "source": "perp-scout/latest.json",
    "priority": 3
   },
   {
-   "text": "RSI(14) daily at 2026-10-19 08:46 CT: 7 overbought (ABBV, BOXX, COST, CVI, KO), 28 oversold (AIPI, APLD, ARR, ASTS, AVAV) of 188",
-   "source": "brain/raw/rsi/rsi-2026-10-19.json",
+   "text": "RSI(14) daily at 2026-10-20 04:46 CT: 7 overbought (ABBV, BOXX, COST, CVI, KO), 30 oversold (AIPI, APLD, ARR, ASTS, AVAV) of 188",
+   "source": "brain/raw/rsi/rsi-2026-10-20.json",
    "priority": 3
   },
   {
