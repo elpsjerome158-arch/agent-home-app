@@ -1,6 +1,6 @@
 {
  "schema": "brain-insights/1",
- "generated_at": "2026-10-20 20:17:14 CT",
+ "generated_at": "2026-10-21 08:23:22 CT",
  "insights": [
   {
    "text": "All 9 weekend crypto setups rejected for ~1.9% spread plus downtrend (P-001–P-011)",
@@ -23,23 +23,23 @@
    "priority": 1
   },
   {
-   "text": "Perps Scout: SOL/BTC/ETH all ranging; no desk packet sent (None)",
-   "source": "perp-scout/regime.json",
-   "priority": 2
-  },
-  {
-   "text": "IT crash log: 11 entries, 0 open",
+   "text": "IT crash log: 13 entries, 2 open (Phone app data ~12h behind going into Wednesday: last Pages publish 8:26 PM CT Oct 20 (99a87c1). Since then Meme `pumpfun-feed.json` + `paper-account.json` (7:46 AM) and `trading_desk.json` (4:20 AM) change",
    "source": "it/crash-log.md",
    "priority": 2
   },
   {
-   "text": "pump.fun feed: 289/300 scanned coins FAIL filters",
+   "text": "pump.fun feed: 293/300 scanned coins FAIL filters",
    "source": "agent-home-ios/.pages/pumpfun-feed.json verdicts",
    "priority": 3
   },
   {
-   "text": "24h: SOL 106.53 (+1.33%), BTC 83,014.4 (+1.21%), ETH 2,449.03 (+1.65%)",
+   "text": "24h: SOL 107.3 (+2.82%), BTC 83,730.0 (+2.81%), ETH 2,483.27 (+3.73%)",
    "source": "perp-scout/latest.json",
+   "priority": 3
+  },
+  {
+   "text": "RSI(14) daily at 2026-10-21 04:45 CT: 6 overbought (ABBV, BOXX, COST, CVI, KO), 25 oversold (ARR, AVAV, BAC, BTDR, GEMI) of 188",
+   "source": "brain/raw/rsi/rsi-2026-10-21.json",
    "priority": 3
   }
  ]
