@@ -1,14 +1,14 @@
 {
  "schema": "brain-insights/1",
- "generated_at": "2026-10-20 16:20:50 CT",
+ "generated_at": "2026-10-20 20:17:14 CT",
  "insights": [
   {
-   "text": "All 8 weekend crypto setups rejected for ~1.9% spread plus downtrend (P-001–P-009)",
+   "text": "All 9 weekend crypto setups rejected for ~1.9% spread plus downtrend (P-001–P-011)",
    "source": "trade-journal/paper-ledger.json setups",
    "priority": 1
   },
   {
-   "text": "7 of 8 rejected setups have no decision score (P-002, P-003, P-004, P-005, P-006, P-007, P-009); scheduled cycles don't poll Setup Scout, so Devil's Advocate/Risk Coach never review",
+   "text": "8 of 9 rejected setups have no decision score (P-002, P-003, P-004, P-005, P-006, P-007, P-009, P-011); scheduled cycles don't poll Setup Scout, so Devil's Advocate/Risk Coach never review",
    "source": "trade-journal/paper-ledger.json setups.decision_score",
    "priority": 1
   },
@@ -33,12 +33,12 @@
    "priority": 2
   },
   {
-   "text": "pump.fun feed: 287/300 scanned coins FAIL filters",
+   "text": "pump.fun feed: 289/300 scanned coins FAIL filters",
    "source": "agent-home-ios/.pages/pumpfun-feed.json verdicts",
    "priority": 3
   },
   {
-   "text": "24h: SOL 105.87 (+1.52%), BTC 82,552.8 (+0.64%), ETH 2,436.2 (+1.42%)",
+   "text": "24h: SOL 106.53 (+1.33%), BTC 83,014.4 (+1.21%), ETH 2,449.03 (+1.65%)",
    "source": "perp-scout/latest.json",
    "priority": 3
   }
