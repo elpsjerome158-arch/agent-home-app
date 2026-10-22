@@ -1,6 +1,6 @@
 {
  "schema": "brain-insights/1",
- "generated_at": "2026-10-21 20:21:56 CT",
+ "generated_at": "2026-10-22 08:20:28 CT",
  "insights": [
   {
    "text": "All 10 weekend crypto setups rejected for ~1.9% spread plus downtrend (P-001–P-015)",
@@ -23,7 +23,7 @@
    "priority": 1
   },
   {
-   "text": "IT crash log: 13 entries, 0 open",
+   "text": "IT crash log: 15 entries, 2 open (Phone app data ~10.5h behind going into Thursday: last Pages publish 9:34 PM CT Oct 21 (621b32c, full). Since then Meme `[file]` + `[file]` + `[file]` (7:46 AM) and `[file]` (4:17 AM) changed but were not p",
    "source": "IT Agent",
    "priority": 2
   },
@@ -33,12 +33,12 @@
    "priority": 3
   },
   {
-   "text": "24h: SOL 106.86 (+0.43%), BTC 84,223.3 (+1.61%), ETH 2,474.28 (+1.13%)",
+   "text": "24h: SOL 104.16 (-2.94%), BTC 81,614.0 (-2.55%), ETH 2,396.2 (-3.53%)",
    "source": "brain hub",
    "priority": 3
   },
   {
-   "text": "RSI(14) daily at 2026-10-21 16:49 CT: 6 overbought (ABBV, BOXX, COST, CVI, KO), 25 oversold (ARR, AVAV, BAC, BTDR, GEMI) of 188",
+   "text": "RSI(14) daily at 2026-10-22 04:48 CT: 6 overbought (ABBV, BOXX, COST, CVI, KO), 25 oversold (ARR, AVAV, BAC, BTDR, GEMI) of 188",
    "source": "RSI tracker",
    "priority": 3
   }
