@@ -1,6 +1,6 @@
 {
  "schema": "brain-insights/1",
- "generated_at": "2026-10-22 12:24:16 CT",
+ "generated_at": "2026-10-22 16:21:12 CT",
  "insights": [
   {
    "text": "All 11 weekend crypto setups rejected for ~1.9% spread plus downtrend (P-001–P-016)",
@@ -33,12 +33,12 @@
    "priority": 3
   },
   {
-   "text": "24h: SOL 104.75 (-1.76%), BTC 81,683.4 (-2.18%), ETH 2,405.26 (-2.46%)",
+   "text": "24h: SOL 103.72 (-4.56%), BTC 81,263.9 (-3.99%), ETH 2,381.53 (-5.38%)",
    "source": "brain hub",
    "priority": 3
   },
   {
-   "text": "RSI(14) daily at 2026-10-22 08:49 CT: 6 overbought (ABBV, BOXX, COST, CVI, KO), 25 oversold (ARR, AVAV, BAC, BTDR, GEMI) of 188",
+   "text": "RSI(14) daily at 2026-10-22 12:51 CT: 2 overbought (BOXX, COST), 21 oversold (AVAV, BAC, CMG, GEMI, HOS) of 188",
    "source": "RSI tracker",
    "priority": 3
   }
