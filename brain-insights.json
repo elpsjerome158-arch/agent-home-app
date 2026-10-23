@@ -1,14 +1,14 @@
 {
  "schema": "brain-insights/1",
- "generated_at": "2026-10-22 16:21:12 CT",
+ "generated_at": "2026-10-22 20:26:20 CT",
  "insights": [
   {
-   "text": "All 11 weekend crypto setups rejected for ~1.9% spread plus downtrend (P-001–P-016)",
+   "text": "All 12 weekend crypto setups rejected for ~1.9% spread plus downtrend (P-001–P-018)",
    "source": "Trade Journal Bot",
    "priority": 1
   },
   {
-   "text": "10 of 11 rejected setups have no decision score (P-002, P-003, P-004, P-005, P-006, P-007, P-009, P-011, P-015, P-016); scheduled cycles don't poll Setup Scout, so Devil's [file] Coach never review",
+   "text": "11 of 12 rejected setups have no decision score (P-002, P-003, P-004, P-005, P-006, P-007, P-009, P-011, P-015, P-016, P-018); scheduled cycles don't poll Setup Scout, so Devil's [file] Coach never review",
    "source": "Trade Journal Bot",
    "priority": 1
   },
@@ -33,12 +33,12 @@
    "priority": 3
   },
   {
-   "text": "24h: SOL 103.72 (-4.56%), BTC 81,263.9 (-3.99%), ETH 2,381.53 (-5.38%)",
+   "text": "24h: SOL 103.35 (-3.42%), BTC 81,290.1 (-3.56%), ETH 2,381.51 (-3.87%)",
    "source": "brain hub",
    "priority": 3
   },
   {
-   "text": "RSI(14) daily at 2026-10-22 12:51 CT: 2 overbought (BOXX, COST), 21 oversold (AVAV, BAC, CMG, GEMI, HOS) of 188",
+   "text": "RSI(14) daily at 2026-10-22 16:46 CT: 2 overbought (BOXX, COST), 21 oversold (AVAV, BAC, CMG, GEMI, HOS) of 188",
    "source": "RSI tracker",
    "priority": 3
   }
