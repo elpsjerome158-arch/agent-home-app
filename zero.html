@@ -38,11 +38,11 @@ html,body{margin:0;height:100%;background:var(--bg);color:#E9ECF2;overflow:hidde
 @keyframes breathe{50%{transform:scale(1.02) translateY(-1%)}}
 @keyframes pulse{50%{opacity:.8}}
 /* scanline + vignette */
-#scan{position:fixed;inset:0;pointer-events:none;z-index:3;opacity:.5;
+#scan{position:fixed;inset:0;pointer-events:none;z-index:3;opacity:.12;
   background:repeating-linear-gradient(0deg,rgba(255,255,255,.035) 0 1px,transparent 1px 3px);mix-blend-mode:screen}
 #scan::after{content:"";position:absolute;left:0;right:0;height:22%;top:-25%;background:linear-gradient(180deg,transparent,rgba(45,212,255,.07),transparent);animation:sweep 7s linear infinite}
 @keyframes sweep{to{top:110%}}
-#vig{position:fixed;inset:0;pointer-events:none;z-index:2;background:radial-gradient(120% 100% at 50% 40%,transparent 55%,rgba(0,0,0,.65) 100%)}
+#vig{position:fixed;inset:0;pointer-events:none;z-index:2;background:radial-gradient(120% 100% at 50% 40%,transparent 55%,rgba(0,0,0,.5) 100%)}
 /* HUD */
 #hud{position:fixed;left:0;right:0;top:0;z-index:5;padding:calc(var(--sat) + 10px) 14px 0;display:flex;gap:10px;justify-content:space-between;pointer-events:none}
 .panel{background:rgba(8,12,20,.62);border:1px solid color-mix(in srgb,var(--glow) 55%,transparent);border-radius:10px;padding:7px 10px;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
@@ -129,7 +129,7 @@ const DAY = 86400;
 
 /* ---------- shared state (read by the 3D loop) ---------- */
 const Z = { talk: 0, speaking: false, pulse: 0, expr: "neutral", stale: false, fresh: true, woke: false, muted: false,
-            data: null, intent: null, onExpr: null, onState: null, simTalkUntil: 0 };
+            data: null, intent: null, onExpr: null, onState: null, simTalkUntil: 0, fx: null, sleeping: false, lastAct: performance.now() };
 
 /* ---------- data (public only) ---------- */
 async function getJSON(u) {
@@ -212,6 +212,7 @@ function setExpr(e) { Z.expr = e || "neutral"; if (Z.onExpr) Z.onExpr(Z.expr); }
 function speakText(text, expr, opts) {
   opts = opts || {};
   const tok = ++speakTok;
+  Z.lastAct = performance.now();
   setExpr(expr);
   if (!opts.noBubble) bubble(text, opts.actions);
   const start = () => { Z.speaking = true; stage.classList.add("talking"); };
@@ -458,229 +459,480 @@ async function init3D() {
     if (!(probe.getContext("webgl2") || probe.getContext("webgl"))) throw new Error("no webgl");
     THREE = await Promise.race([import("three"), new Promise((_, rej) => setTimeout(() => rej(new Error("three timeout")), 9000))]);
   } catch (e) { console.warn("3D unavailable, using still image:", e && e.message); return false; }
-  let EffectComposer, RenderPass, UnrealBloomPass, OutputPass;
+  let EffectComposer, RenderPass, UnrealBloomPass, OutputPass, mergeGeometries = null;
   try {
     [{ EffectComposer }, { RenderPass }, { UnrealBloomPass }, { OutputPass }] = await Promise.all([
       import("three/addons/postprocessing/EffectComposer.js"), import("three/addons/postprocessing/RenderPass.js"),
       import("three/addons/postprocessing/UnrealBloomPass.js"), import("three/addons/postprocessing/OutputPass.js")]);
   } catch (e) { console.warn("bloom unavailable:", e && e.message); }
+  try { ({ mergeGeometries } = await import("three/addons/utils/BufferGeometryUtils.js")); } catch (e) {}
 
   const T = THREE;
-  const renderer = new T.WebGLRenderer({ canvas, antialias: false, alpha: true, powerPreference: "high-performance" });
+  const renderer = new T.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: "high-performance" });
   let dpr = Math.min(window.devicePixelRatio || 1, 2);
   renderer.setPixelRatio(dpr);
-  renderer.setClearColor(0x000000, 0);
-  renderer.toneMapping = T.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
+  renderer.setClearColor(0x03040a, 1);
+  renderer.toneMapping = T.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.0;
   renderer.outputColorSpace = T.SRGBColorSpace;
   const scene = new T.Scene();
-  const camera = new T.PerspectiveCamera(36, 1, 0.1, 100);
-  const CYAN = new T.Color(0x2dd4ff), PINK = new T.Color(0xff3b7a), MAG = new T.Color(0xe040fb);
+  const camera = new T.PerspectiveCamera(32, 1, 0.1, 100);
+  const CYAN = new T.Color(0x22d6ff), MAG = new T.Color(0xf53ad8), PINK = new T.Color(0xff3b7a), VIOL = new T.Color(0xc23cff);
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+  const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+  let seed = 1234567; const rnd = () => { seed |= 0; seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
 
-  /* environment: tiny gradient sky with neon blobs -> PMREM for glossy reflections */
+  /* ---------- environment: dark studio with cyan (left) + magenta (right) strip lights -> PMREM ---------- */
   {
-    const c = document.createElement("canvas"); c.width = 512; c.height = 256; const x = c.getContext("2d");
-    const g = x.createLinearGradient(0, 0, 0, 256); g.addColorStop(0, "#10162a"); g.addColorStop(.5, "#05060b"); g.addColorStop(1, "#0a0710"); x.fillStyle = g; x.fillRect(0, 0, 512, 256);
-    const blob = (px, py, r, col) => { const rg = x.createRadialGradient(px, py, 0, px, py, r); rg.addColorStop(0, col); rg.addColorStop(1, "rgba(0,0,0,0)"); x.fillStyle = rg; x.fillRect(0, 0, 512, 256); };
-    blob(90, 90, 190, "rgba(45,212,255,.8)"); blob(400, 80, 200, "rgba(255,59,122,.75)"); blob(250, 40, 110, "rgba(255,255,255,.45)"); blob(256, 210, 90, "rgba(224,64,251,.35)");
+    const c = document.createElement("canvas"); c.width = 1024; c.height = 512; const x = c.getContext("2d");
+    x.fillStyle = "#03040a"; x.fillRect(0, 0, 1024, 512);
+    const g = x.createLinearGradient(0, 0, 0, 512); g.addColorStop(0, "rgba(40,50,90,.55)"); g.addColorStop(.45, "rgba(0,0,0,0)"); g.addColorStop(1, "rgba(30,10,40,.5)"); x.fillStyle = g; x.fillRect(0, 0, 1024, 512);
+    const soft = (cx, cy, rx, ry, col, a) => { x.save(); x.translate(cx, cy); x.scale(rx, ry); const rg = x.createRadialGradient(0, 0, 0, 0, 0, 1); rg.addColorStop(0, col.replace("A", a)); rg.addColorStop(.55, col.replace("A", a * .5)); rg.addColorStop(1, col.replace("A", 0)); x.fillStyle = rg; x.fillRect(-1, -1, 2, 2); x.restore(); };
+    soft(900, 250, 70, 170, "rgba(34,214,255,A)", 1);     // cyan strip, front-left
+    soft(930, 120, 60, 60, "rgba(190,240,255,A)", .9);
+    soft(600, 250, 80, 170, "rgba(245,58,216,A)", 1);    // magenta strip, front-right
+    soft(560, 380, 70, 60, "rgba(245,58,216,A)", .8);
+    soft(790, 70, 150, 36, "rgba(255,255,255,A)", .95);  // top softbox
+    soft(790, 470, 160, 40, "rgba(60,20,120,A)", .8);
+    soft(250, 250, 120, 170, "rgba(120,60,255,A)", .55); // back rim
+    soft(0, 250, 90, 170, "rgba(34,214,255,A)", .6); soft(1024, 250, 90, 170, "rgba(34,214,255,A)", .6);
     const tex = new T.CanvasTexture(c); tex.mapping = T.EquirectangularReflectionMapping; tex.colorSpace = T.SRGBColorSpace;
     const pm = new T.PMREMGenerator(renderer); scene.environment = pm.fromEquirectangular(tex).texture; tex.dispose(); pm.dispose();
   }
-  scene.add(new T.AmbientLight(0x34486a, 1.1));
-  const kL = new T.DirectionalLight(0x6fe3ff, 1.6); kL.position.set(-3, 3, 4); scene.add(kL);
-  const kR = new T.DirectionalLight(0xff4d8a, 1.5); kR.position.set(3.5, 1.5, 2.5); scene.add(kR);
-  const rim = new T.DirectionalLight(0xb06bff, 1.2); rim.position.set(0, 2, -4); scene.add(rim);
+  scene.add(new T.AmbientLight(0x1c2440, 1.0));
+  const kL = new T.DirectionalLight(0x38d8ff, 0.9); kL.position.set(-4, 2.2, 3.2); scene.add(kL);
+  const kR = new T.DirectionalLight(0xff3fd8, 1.0); kR.position.set(4.2, 0.6, 2.4); scene.add(kR);
+  const rim = new T.DirectionalLight(0xa86bff, 1.4); rim.position.set(0.5, 2.5, -4); scene.add(rim);
+  const rimC = new T.DirectionalLight(0x2fe0ff, 1.6); rimC.position.set(-5, 1.2, -2.2); scene.add(rimC);
+  const rimM = new T.DirectionalLight(0xff3fe0, 1.8); rimM.position.set(5, 0.6, -2.0); scene.add(rimM);
+  const top = new T.DirectionalLight(0xdfe8ff, 0.9); top.position.set(-1, 5, 2); scene.add(top);
 
-  /* starfield + nebula (never rotates with the bust) */
-  const stars = (() => {
-    const N = 1400, p = new Float32Array(N * 3), cl = new Float32Array(N * 3);
-    for (let i = 0; i < N; i++) {
-      const r = 25 + Math.random() * 30, th = Math.random() * Math.PI * 2, ph = Math.acos(2 * Math.random() - 1);
-      p.set([r * Math.sin(ph) * Math.cos(th), r * Math.cos(ph), r * Math.sin(ph) * Math.sin(th)], i * 3);
-      const k = Math.random(); const c = k < .6 ? new T.Color(0xffffff) : k < .8 ? CYAN.clone() : PINK.clone(); c.multiplyScalar(0.5 + Math.random() * 0.8); cl.set([c.r, c.g, c.b], i * 3);
+  /* ---------- background: deep-space starfield + blue nebula (left) + magenta nebula (right), drawn once per size ---------- */
+  let bgTex = null;
+  const hash = (x, y) => { let h = (x * 374761393 + y * 668265263) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
+  const vnoise = (x, y) => { const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi; const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+    return (hash(xi, yi) * (1 - u) + hash(xi + 1, yi) * u) * (1 - v) + (hash(xi, yi + 1) * (1 - u) + hash(xi + 1, yi + 1) * u) * v; };
+  const fbm = (x, y) => { let a = .5, s = 0; for (let i = 0; i < 5; i++) { s += a * vnoise(x, y); x = x * 2.03 + 11.3; y = y * 2.03 + 4.7; a *= .5; } return s; };
+  function buildBackground() {
+    const aspect = W / H, w = clamp(Math.round(W * 0.9), 320, 900), h = Math.round(w / aspect);
+    const nw = 120, nh = Math.max(60, Math.round(nw / aspect));
+    const nb = document.createElement("canvas"); nb.width = nw; nb.height = nh; const nx = nb.getContext("2d"); const im = nx.createImageData(nw, nh);
+    for (let j = 0; j < nh; j++) for (let i = 0; i < nw; i++) {
+      const u = i / nw, v = j / nh, o = (j * nw + i) * 4;
+      // blue streak (left, diagonal) – wispy
+      let bx = (u - 0.14) * aspect, by = v - 0.34; const rx = bx * 0.82 + by * 0.57, ry = -bx * 0.57 + by * 0.82;
+      const bd = Math.exp(-(rx * rx) / 0.012 - (ry * ry) / 0.16), bn = fbm(u * 6 * Math.max(1, aspect * .8), v * 6);
+      const B = clamp(bd * (0.35 + 1.15 * Math.pow(bn, 1.6)) * 1.25, 0, 1);
+      // magenta cloud (right)
+      const mx = (u - 0.9) * aspect, my = v - 0.46; const md = Math.exp(-(mx * mx) / 0.05 - (my * my) / 0.1), mn = fbm(u * 7 * Math.max(1, aspect * .8) + 9, v * 7 + 3);
+      const M = clamp(md * (0.2 + 1.5 * Math.pow(mn, 1.8)), 0, 1);
+      const core = Math.exp(-(mx * mx + (my + 0.06) * (my + 0.06)) / 0.008);
+      const r = 8 + 46 * B + 150 * M + 120 * core, gg = 12 + 82 * B + 22 * M + 40 * core, b = 22 + 120 * B + 120 * M + 100 * core;
+      im.data[o] = r; im.data[o + 1] = gg; im.data[o + 2] = b; im.data[o + 3] = 255;
     }
-    const g = new T.BufferGeometry(); g.setAttribute("position", new T.BufferAttribute(p, 3)); g.setAttribute("color", new T.BufferAttribute(cl, 3));
-    const m = new T.PointsMaterial({ size: 0.16, vertexColors: true, sizeAttenuation: true, transparent: true, depthWrite: false, blending: T.AdditiveBlending, toneMapped: false });
-    const pts = new T.Points(g, m); pts.renderOrder = -10; scene.add(pts); return pts;
-  })();
-  function nebula(col, x, y, z, s, a) {
-    const c = document.createElement("canvas"); c.width = c.height = 128; const cx = c.getContext("2d");
-    const rg = cx.createRadialGradient(64, 64, 0, 64, 64, 64); rg.addColorStop(0, col); rg.addColorStop(1, "rgba(0,0,0,0)"); cx.fillStyle = rg; cx.fillRect(0, 0, 128, 128);
-    const sp = new T.Sprite(new T.SpriteMaterial({ map: new T.CanvasTexture(c), transparent: true, opacity: a, depthWrite: false, blending: T.AdditiveBlending, toneMapped: false }));
-    sp.position.set(x, y, z); sp.scale.set(s, s, 1); sp.renderOrder = -9; scene.add(sp); return sp;
+    nx.putImageData(im, 0, 0);
+    const c = document.createElement("canvas"); c.width = w; c.height = h; const x = c.getContext("2d");
+    x.fillStyle = "#02030a"; x.fillRect(0, 0, w, h); x.imageSmoothingEnabled = true; x.imageSmoothingQuality = "high"; x.globalAlpha = 0.62; x.drawImage(nb, 0, 0, w, h); x.globalAlpha = 1;
+    const vg = x.createRadialGradient(w / 2, h * 0.4, h * 0.2, w / 2, h * 0.45, h * 0.75); vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, "rgba(0,0,6,.55)"); x.fillStyle = vg; x.fillRect(0, 0, w, h);
+    const n = Math.round(w * h / 900);
+    for (let i = 0; i < n; i++) {
+      const sx = rnd() * w, sy = rnd() * h, k = rnd(); const big = k > 0.985, sz = big ? 1.2 + rnd() * 1.1 : 0.35 + rnd() * 0.7;
+      const col = k < .7 ? "255,255,255" : k < .86 ? "130,200,255" : k < .94 ? "255,150,230" : "120,170,255";
+      x.fillStyle = `rgba(${col},${(0.35 + rnd() * 0.65) * (big ? 1 : 0.8)})`; x.beginPath(); x.arc(sx, sy, sz, 0, 7); x.fill();
+      if (big) { const rg = x.createRadialGradient(sx, sy, 0, sx, sy, 7); rg.addColorStop(0, `rgba(${col},.45)`); rg.addColorStop(1, `rgba(${col},0)`); x.fillStyle = rg; x.fillRect(sx - 7, sy - 7, 14, 14); }
+    }
+    if (bgTex) bgTex.dispose();
+    bgTex = new T.CanvasTexture(c); bgTex.colorSpace = T.SRGBColorSpace; bgTex.minFilter = T.LinearFilter; bgTex.generateMipmaps = false; scene.background = bgTex;
   }
-  nebula("rgba(45,120,255,1)", -14, 4, -22, 26, 0.22); nebula("rgba(224,64,251,1)", 15, -2, -24, 30, 0.2); nebula("rgba(45,212,255,1)", 4, 10, -26, 20, 0.12);
 
-  /* ---- Zero ---- */
+  /* ---------- Zero ---------- */
   const zero = new T.Group(); scene.add(zero);
-  const body = new T.Group(); zero.add(body);        // breathing / bob target
-  const head = new T.Group(); head.position.set(0, 1.05, 0); body.add(head);
+  const body = new T.Group(); zero.add(body);                  // breathing / bob target
+  const head = new T.Group(); body.add(head);                  // origin = helmet centre
+  const torsoG = new T.Group(); body.add(torsoG);
 
-  const suit = new T.MeshPhysicalMaterial({ color: 0x0d1018, metalness: 0.85, roughness: 0.38, clearcoat: 0.6, clearcoatRoughness: 0.3, envMapIntensity: 1.1 });
-  const suit2 = new T.MeshPhysicalMaterial({ color: 0x131722, metalness: 0.8, roughness: 0.5, envMapIntensity: 0.9 });
-  const bm = (c, k, extra) => { const m = new T.MeshBasicMaterial(Object.assign({ toneMapped: false }, extra || {})); m.color.setRGB(c.r * k, c.g * k, c.b * k); return m; };
-  const neon = (c) => bm(c, 1.25);
-  const neonC = neon(CYAN), neonP = neon(PINK);
-  const tube = (pts, mat, r) => { const m = new T.Mesh(new T.TubeGeometry(new T.CatmullRomCurve3(pts), pts.length * 6, r || 0.014, 6, false), mat); return m; };
-
-  // helmet
-  const helmet = new T.Mesh(new T.SphereGeometry(1, 64, 48), suit); head.add(helmet);
-  // visor dome (glossy dark glass)
-  const visorMat = new T.MeshPhysicalMaterial({ color: 0x03050a, metalness: 0.2, roughness: 0.04, clearcoat: 1, clearcoatRoughness: 0.02, transparent: true, opacity: 0.78, envMapIntensity: 2.2, emissive: CYAN.clone(), emissiveIntensity: 0.04, depthWrite: false });
-  const visor = new T.Mesh(new T.SphereGeometry(1, 48, 36), visorMat); visor.scale.set(0.80, 0.72, 0.75); visor.position.set(0, 0.0, 0.45); visor.renderOrder = 5; head.add(visor);
-  // visor rim
-  const rimG = new T.Group(); head.add(rimG);
-  {
-    const L = [], Rr = []; for (let i = 0; i <= 40; i++) { const a = Math.PI / 2 + (i / 40) * Math.PI; L.push(new T.Vector3(Math.cos(a) * 0.82, Math.sin(a) * 0.73, 0.63 + Math.cos((a - Math.PI) * 0.5) * 0.06)); }
-    for (let i = 0; i <= 40; i++) { const a = Math.PI / 2 - (i / 40) * Math.PI; Rr.push(new T.Vector3(Math.cos(a) * 0.82, Math.sin(a) * 0.73, 0.63 + Math.cos((a) * 0.5) * 0.06)); }
-    rimG.add(tube(L, neonC, 0.013)); rimG.add(tube(Rr, neonP, 0.013));
-  }
-  // skull textures (re-drawn when expression / state colour changes)
-  const crC = document.createElement("canvas"); crC.width = crC.height = 512; const jwC = document.createElement("canvas"); jwC.width = 512; jwC.height = 256;
-  const crT = new T.CanvasTexture(crC), jwT = new T.CanvasTexture(jwC); crT.colorSpace = jwT.colorSpace = T.SRGBColorSpace; crT.anisotropy = 4;
-  function glowStroke(x, col, w, blur) { x.strokeStyle = col; x.lineWidth = w; x.shadowColor = col; x.shadowBlur = blur; x.lineJoin = x.lineCap = "round"; }
-  function drawSkull(expr) {
-    const A = Z.stale ? "#ff3b7a" : "#2dd4ff", B = Z.stale ? "#e040fb" : "#ff3b7a";
-    const x = crC.getContext("2d"); x.clearRect(0, 0, 512, 512);
-    // cranium
-    const cran = () => { x.beginPath(); x.moveTo(150, 330); x.bezierCurveTo(105, 250, 112, 90, 256, 66); x.bezierCurveTo(400, 90, 407, 250, 362, 330); x.lineTo(338, 372); x.lineTo(174, 372); x.closePath(); };
-    cran(); x.fillStyle = "rgba(20,40,70,.22)"; x.fill();
-    glowStroke(x, A, 7, 22); cran(); x.stroke();
-    glowStroke(x, B, 3, 16); x.beginPath(); x.moveTo(256, 66); x.bezierCurveTo(300, 70, 380, 120, 372, 214); x.stroke();
-    x.beginPath(); x.moveTo(190, 96); x.lineTo(215, 140); x.lineTo(196, 170); x.stroke();            // cracks
-    x.beginPath(); x.moveTo(310, 90); x.lineTo(296, 138); x.lineTo(322, 156); x.stroke();
-    x.shadowBlur = 0; x.fillStyle = "rgba(180,235,255,.65)"; for (let i = 0; i < 46; i++) { const px = 150 + Math.random() * 212, py = 100 + Math.random() * 230; x.fillRect(px, py, 2, 2); } // sparkles in the bone
-    // eyes
-    const eye = (cx, cy, rx, ry, kind, flip) => {
-      x.save(); x.translate(cx, cy);
-      x.beginPath();
-      if (kind === "happy") { x.moveTo(-rx, ry * 0.5); x.quadraticCurveTo(0, -ry * 1.1, rx, ry * 0.5); }
-      else if (kind === "sleepy") { x.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2); }
-      else if (kind === "wink") { x.moveTo(-rx, 0); x.quadraticCurveTo(0, ry * 0.6, rx, 0); }
-      else if (kind === "alert") { x.moveTo(-rx, -ry * .1); x.quadraticCurveTo(0, -ry * 1.4, rx, -ry * .5 * (flip ? -1 : 1) - ry * .2); x.quadraticCurveTo(rx * .6, ry * 1.1, -rx * .2, ry); x.closePath(); }
-      else x.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
-      if (kind !== "happy" && kind !== "wink") { x.fillStyle = "rgba(255,59,122,.18)"; x.fill(); }
-      glowStroke(x, B, kind === "happy" || kind === "wink" ? 8 : 6, 20); x.stroke();
-      if (kind === "neutral" || kind === "think" || kind === "alert") { x.shadowBlur = 24; x.fillStyle = B; x.beginPath(); x.arc(0, 0, ry * (kind === "alert" ? 0.34 : 0.22), 0, 7); x.fill(); }
-      if (kind === "sleepy") { x.fillStyle = "rgba(2,3,8,.92)"; x.shadowBlur = 0; x.fillRect(-rx - 4, -ry - 4, rx * 2 + 8, ry * 1.25); glowStroke(x, B, 5, 14); x.beginPath(); x.moveTo(-rx, -ry * .25); x.lineTo(rx, -ry * .25); x.stroke(); }
-      x.restore();
+  const suitMat = new T.MeshPhysicalMaterial({ color: 0x06070b, metalness: 0.6, roughness: 0.3, clearcoat: 0.85, clearcoatRoughness: 0.16, envMapIntensity: 1.35 });
+  const plateMat = new T.MeshPhysicalMaterial({ color: 0x20252f, metalness: 0.62, roughness: 0.3, clearcoat: 0.9, clearcoatRoughness: 0.12, envMapIntensity: 1.5 });
+  const darkMat = new T.MeshStandardMaterial({ color: 0x050609, metalness: 0.5, roughness: 0.5, envMapIntensity: 1.0 });
+  const weave = (() => { const c = document.createElement("canvas"); c.width = c.height = 64; const x = c.getContext("2d"); x.fillStyle = "#808080"; x.fillRect(0, 0, 64, 64);
+    x.lineWidth = 2; for (let i = -64; i < 128; i += 8) { x.strokeStyle = "#b0b0b0"; x.beginPath(); x.moveTo(i, 0); x.lineTo(i + 64, 64); x.stroke(); x.strokeStyle = "#5c5c5c"; x.beginPath(); x.moveTo(i + 4, 0); x.lineTo(i - 60, 64); x.stroke(); }
+    const t = new T.CanvasTexture(c); t.wrapS = t.wrapT = T.RepeatWrapping; t.repeat.set(10, 7); return t; })();
+  const fabricMat = new T.MeshStandardMaterial({ color: 0x0e1016, metalness: 0.3, roughness: 0.6, bumpMap: weave, bumpScale: 0.8, envMapIntensity: 0.9 });
+  // neon rim light: cyan on the left silhouette, magenta on the right (tinted from the live state colours)
+  const rimUni = { uRimC: { value: new T.Color(0x22d6ff) }, uRimM: { value: new T.Color(0xf53ad8) } };
+  function addRim(mat, k, pw) {
+    mat.onBeforeCompile = (sh) => {
+      sh.uniforms.uRimC = rimUni.uRimC; sh.uniforms.uRimM = rimUni.uRimM; sh.uniforms.uRimK = { value: k }; sh.uniforms.uRimP = { value: pw || 3.8 };
+      sh.fragmentShader = "uniform vec3 uRimC; uniform vec3 uRimM; uniform float uRimK; uniform float uRimP;\n" + sh.fragmentShader.replace("#include <opaque_fragment>",
+        "{ vec3 rn = normalize(vNormal); float rf = pow(1.0 - clamp(dot(rn, normalize(vViewPosition)), 0.0, 1.0), uRimP); vec3 rc = mix(uRimC, uRimM, smoothstep(-0.25, 0.3, rn.x)); outgoingLight += rc * rf * uRimK; }\n#include <opaque_fragment>");
     };
-    const E = { neutral: ["neutral", "neutral"], happy: ["happy", "happy"], joke: ["happy", "wink"], think: ["neutral", "neutral"], alert: ["alert", "alert"], sleepy: ["sleepy", "sleepy"] }[expr] || ["neutral", "neutral"];
-    const th = expr === "think";
-    eye(205, 236, 44, 46, E[0], false); eye(307, 236 + (th ? -6 : 0), th ? 36 : 44, th ? 36 : 46, E[1], true);
-    if (th) { glowStroke(x, A, 5, 14); x.beginPath(); x.moveTo(262, 180); x.lineTo(350, 162); x.stroke(); }
-    // nose
-    glowStroke(x, A, 5, 16); x.beginPath(); x.moveTo(256, 296); x.lineTo(238, 336); x.lineTo(256, 328); x.lineTo(274, 336); x.closePath(); x.stroke();
+    mat.customProgramCacheKey = () => "rim" + (pw || 3.8);
+  }
+  addRim(suitMat, 1.0, 6); addRim(plateMat, 1.2, 6); addRim(fabricMat, 1.0, 6); addRim(darkMat, 0.8, 6);
+  const bm = (c, k, extra) => { const m = new T.MeshBasicMaterial(Object.assign({ toneMapped: false }, extra || {})); m.color.setRGB(c.r * k, c.g * k, c.b * k); return m; };
+  const neonC = bm(CYAN, 1.3), neonM = bm(MAG, 1.3);
+  const neonCbase = 1.3, neonMbase = 1.3;
+
+  /* tube batching: all neon tubes sharing parent+material become one mesh */
+  const buckets = new Map();
+  function tube(parent, pts, mat, r, closed) {
+    const g = new T.TubeGeometry(new T.CatmullRomCurve3(pts, !!closed), Math.max(10, pts.length * 5), r || 0.014, 5, !!closed);
+    if (!mergeGeometries) { parent.add(new T.Mesh(g, mat)); return; }
+    let m = buckets.get(parent); if (!m) buckets.set(parent, m = new Map());
+    let l = m.get(mat); if (!l) m.set(mat, l = []); l.push(g);
+  }
+  function flushTubes() { buckets.forEach((m, parent) => m.forEach((list, mat) => { const g = mergeGeometries(list, false); list.forEach((x) => x.dispose()); parent.add(new T.Mesh(g, mat)); })); buckets.clear(); }
+  const V = (x, y, z) => new T.Vector3(x, y, z);
+
+  /* ---------- helmet (ellipsoid shell + conforming patches) ---------- */
+  const HR = { x: 1.0, y: 1.2, z: 1.06 };
+  const hp = (lon, lat, off) => { off = off || 0; const cl = Math.cos(lat); return V((HR.x + off) * cl * Math.sin(lon), (HR.y + off) * Math.sin(lat), (HR.z + off) * cl * Math.cos(lon)); };
+  // armoured shell: lon/lat panel texture (colour + bump) on an analytic ellipsoid
+  const helmMat = (() => {
+    const W = 2048, Hh = 1024, mk = () => { const c = document.createElement("canvas"); c.width = W; c.height = Hh; return c; };
+    const cc = mk(), bb = mk(), x = cc.getContext("2d"), y = bb.getContext("2d");
+    const P = (lon, lat) => [(lon + Math.PI) / (2 * Math.PI) * W, (Math.PI / 2 - lat) / Math.PI * Hh];
+    x.fillStyle = "#2a303a"; x.fillRect(0, 0, W, Hh); y.fillStyle = "#808080"; y.fillRect(0, 0, W, Hh);
+    let s2 = 99; const r2 = () => { s2 = (s2 * 16807) % 2147483647; return s2 / 2147483647; };
+    const panel = (l0, l1, a0, a1) => {
+      const [X0, Y1] = P(l0, a0), [X1, Y0] = P(l1, a1), w = X1 - X0, h = Y1 - Y0; const ins = 3;
+      const g = x.createLinearGradient(X0, Y0, X0 + w * 0.6, Y1); const k = 64 + r2() * 26; g.addColorStop(0, `rgb(${k + 12},${k + 17},${k + 28})`); g.addColorStop(1, `rgb(${k - 6},${k - 3},${k + 4})`);
+      x.fillStyle = g; x.fillRect(X0 + ins, Y0 + ins, w - ins * 2, h - ins * 2);
+      y.fillStyle = "#9a9a9a"; y.fillRect(X0 + ins + 3, Y0 + ins + 3, w - ins * 2 - 6, h - ins * 2 - 6);
+      y.strokeStyle = "#ffffff"; y.lineWidth = 3; y.strokeRect(X0 + ins + 2, Y0 + ins + 2, w - ins * 2 - 4, h - ins * 2 - 4);
+      x.strokeStyle = "rgba(190,215,250,.75)"; x.lineWidth = 2; x.beginPath(); x.moveTo(X0 + ins + 1, Y1 - ins); x.lineTo(X0 + ins + 1, Y0 + ins + 1); x.lineTo(X1 - ins, Y0 + ins + 1); x.stroke();
+      x.strokeStyle = "rgba(0,0,0,.85)"; x.lineWidth = 3; x.beginPath(); x.moveTo(X1 - ins - 1, Y0 + ins); x.lineTo(X1 - ins - 1, Y1 - ins - 1); x.lineTo(X0 + ins, Y1 - ins - 1); x.stroke();
+    };
+    const band = (a0, a1, cuts) => { for (let i = 0; i < cuts.length - 1; i++) panel(cuts[i], cuts[i + 1], a0, a1); };
+    const rows = (a0, a1, l0, l1, n) => { const cuts = [l0]; for (let i = 1; i < n; i++) cuts.push(l0 + (l1 - l0) * (i + (r2() - 0.5) * 0.5) / n); cuts.push(l1); band(a0, a1, cuts); };
+    // crown, sides, chin guard, back
+    rows(0.72, 0.98, -Math.PI, Math.PI, 12); rows(0.98, 1.22, -Math.PI, Math.PI, 8); rows(1.22, 1.5, -Math.PI, Math.PI, 5);
+    rows(0.2, 0.72, 1.0, 2.2, 3); rows(0.2, 0.72, -2.2, -1.0, 3); rows(-0.35, 0.2, 1.0, 2.2, 3); rows(-0.35, 0.2, -2.2, -1.0, 3); rows(-0.9, -0.35, 1.0, 2.2, 3); rows(-0.9, -0.35, -2.2, -1.0, 3);
+    rows(-1.15, -0.72, -1.0, 1.0, 4); rows(-1.5, -1.15, -Math.PI, Math.PI, 9);
+    rows(-0.72, -0.35, -1.0, -0.75, 1); rows(-0.72, -0.35, 0.75, 1.0, 1);
+    rows(-0.9, 0.72, 2.2, Math.PI, 3); rows(-0.9, 0.72, -Math.PI, -2.2, 3);
+    // thin neon inlays baked as emissive-looking strokes (the tube seams add the bloom)
+    const ct = new T.CanvasTexture(cc); ct.colorSpace = T.SRGBColorSpace; ct.anisotropy = 4; ct.wrapS = T.RepeatWrapping;
+    const bt = new T.CanvasTexture(bb); bt.anisotropy = 4; bt.wrapS = T.RepeatWrapping;
+    const hm = new T.MeshPhysicalMaterial({ map: ct, bumpMap: bt, bumpScale: 1.6, color: 0xffffff, metalness: 0.4, roughness: 0.34, clearcoat: 0.9, clearcoatRoughness: 0.14, envMapIntensity: 1.6 }); addRim(hm, 1.0, 5); return hm;
+  })();
+  const shellGeo = (() => { const pos = [], nor = [], uv = [], idx = [], nu = 96, nv = 64;
+    for (let j = 0; j <= nv; j++) { const lat = -Math.PI / 2 + Math.PI * j / nv; for (let i = 0; i <= nu; i++) { const lon = -Math.PI + 2 * Math.PI * i / nu; const p = hp(lon, lat, 0); pos.push(p.x, p.y, p.z); const n = V(p.x / (HR.x * HR.x), p.y / (HR.y * HR.y), p.z / (HR.z * HR.z)).normalize(); nor.push(n.x, n.y, n.z); uv.push(i / nu, j / nv); } }
+    for (let j = 0; j < nv; j++) for (let i = 0; i < nu; i++) { const A = j * (nu + 1) + i, B = A + 1, C = A + nu + 1, D = C + 1; idx.push(A, B, C, B, D, C); }
+    const g = new T.BufferGeometry(); g.setAttribute("position", new T.Float32BufferAttribute(pos, 3)); g.setAttribute("normal", new T.Float32BufferAttribute(nor, 3)); g.setAttribute("uv", new T.Float32BufferAttribute(uv, 2)); g.setIndex(idx); return g; })();
+  const shell = new T.Mesh(shellGeo, helmMat); head.add(shell);
+  function mkGeo(pos, uv, idx) { const g = new T.BufferGeometry(); g.setAttribute("position", new T.Float32BufferAttribute(pos, 3)); g.setAttribute("uv", new T.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals(); return g; }
+  function ellPatch(lon0, lat0, a, b, r0, r1, offF, nr, nt) {
+    const pos = [], uv = [], idx = [];
+    for (let i = 0; i <= nr; i++) { const r = r0 + (r1 - r0) * i / nr; for (let j = 0; j <= nt; j++) { const th = j / nt * Math.PI * 2; const p = hp(lon0 + a * r * Math.cos(th), lat0 + b * r * Math.sin(th), offF(r)); pos.push(p.x, p.y, p.z); uv.push(0.5 + 0.5 * r * Math.cos(th), 0.5 + 0.5 * r * Math.sin(th)); } }
+    for (let i = 0; i < nr; i++) for (let j = 0; j < nt; j++) { const A = i * (nt + 1) + j, B = A + 1, C = A + nt + 1, D = C + 1; idx.push(A, C, B, B, C, D); }
+    return mkGeo(pos, uv, idx);
+  }
+  function rectPatch(lonC, latC, lw, lh, off, nu, nv) {
+    const pos = [], uv = [], idx = [];
+    for (let j = 0; j <= nv; j++) for (let i = 0; i <= nu; i++) { const s = i / nu, t = j / nv; const p = hp(lonC + (s - 0.5) * lw, latC + (t - 0.5) * lh, off); pos.push(p.x, p.y, p.z); uv.push(s, t); }
+    for (let j = 0; j < nv; j++) for (let i = 0; i < nu; i++) { const A = j * (nu + 1) + i, B = A + 1, C = A + nu + 1, D = C + 1; idx.push(A, B, C, B, D, C); }
+    return mkGeo(pos, uv, idx);
+  }
+  function pillow(lonC, latC, lw, lh, off, bevel, sup, n) {
+    const pos = [], uv = [], idx = []; n = n || 16;
+    for (let j = 0; j <= n; j++) for (let i = 0; i <= n; i++) {
+      let sx = i / n * 2 - 1, ty = j / n * 2 - 1; const rho = Math.pow(Math.pow(Math.abs(sx), sup) + Math.pow(Math.abs(ty), sup), 1 / sup);
+      if (rho > 1) { sx /= rho; ty /= rho; } const g = 1 - Math.min(1, rho);
+      const p = hp(lonC + sx * lw / 2, latC + ty * lh / 2, 0.004 + off * Math.pow(smooth(0, bevel, g), 0.7)); pos.push(p.x, p.y, p.z); uv.push(i / n, j / n);
+    }
+    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) { const A = j * (n + 1) + i, B = A + 1, C = A + n + 1, D = C + 1; idx.push(A, B, C, B, D, C); }
+    return mkGeo(pos, uv, idx);
+  }
+  const VIS = { lon0: 0.0, lat0: -0.03, a: 0.97, b: 0.70 };
+  // visor interior (stars + faint glow), skull plane, glass
+  const intC = document.createElement("canvas"); intC.width = intC.height = 256;
+  { const x = intC.getContext("2d"); const g = x.createRadialGradient(128, 118, 8, 128, 128, 135); g.addColorStop(0, "#03060d"); g.addColorStop(.6, "#02040a"); g.addColorStop(1, "#010206"); x.fillStyle = g; x.fillRect(0, 0, 256, 256);
+    let gg = x.createRadialGradient(256, 150, 0, 256, 150, 120); gg.addColorStop(0, "rgba(245,58,216,.10)"); gg.addColorStop(1, "rgba(245,58,216,0)"); x.fillStyle = gg; x.fillRect(0, 0, 256, 256);
+    gg = x.createRadialGradient(0, 120, 0, 0, 120, 120); gg.addColorStop(0, "rgba(34,214,255,.07)"); gg.addColorStop(1, "rgba(34,214,255,0)"); x.fillStyle = gg; x.fillRect(0, 0, 256, 256);
+    for (let i = 0; i < 160; i++) { const k = rnd(); x.fillStyle = `rgba(${k < .6 ? "255,255,255" : k < .8 ? "150,220,255" : "255,170,240"},${0.25 + rnd() * .6})`; const s = rnd() < .06 ? 1.6 : 0.8; x.fillRect(rnd() * 256, rnd() * 256, s, s); } }
+  const intTex = new T.CanvasTexture(intC); intTex.colorSpace = T.SRGBColorSpace;
+  const visorInt = new T.Mesh(ellPatch(VIS.lon0, VIS.lat0, VIS.a, VIS.b, 0, 1.02, () => 0.009, 6, 56), new T.MeshBasicMaterial({ map: intTex, toneMapped: false })); head.add(visorInt);
+  const glassMat = new T.ShaderMaterial({
+    transparent: true, depthWrite: false, blending: T.AdditiveBlending,
+    uniforms: { uCyan: { value: CYAN.clone() }, uMag: { value: MAG.clone() }, uGlow: { value: 0 } },
+    vertexShader: "varying vec3 vN; varying vec3 vV; varying vec2 vUv; void main(){ vec4 mv = modelViewMatrix*vec4(position,1.0); vN = normalize(normalMatrix*normal); vV = normalize(-mv.xyz); vUv = uv; gl_Position = projectionMatrix*mv; }",
+    fragmentShader: `varying vec3 vN; varying vec3 vV; varying vec2 vUv; uniform vec3 uCyan; uniform vec3 uMag; uniform float uGlow;
+      void main(){
+        vec3 N = normalize(vN), V = normalize(vV);
+        float nv = max(dot(N,V),0.0); float fr = pow(1.0-nv, 3.4);
+        vec3 L1 = normalize(vec3(-0.65,0.45,0.65)), L2 = normalize(vec3(0.75,0.15,0.55)), L3 = normalize(vec3(-0.25,0.95,0.45));
+        float s1 = pow(max(dot(reflect(-L1,N),V),0.0), 38.0), s2 = pow(max(dot(reflect(-L2,N),V),0.0), 32.0), s3 = pow(max(dot(reflect(-L3,N),V),0.0), 55.0);
+        vec3 c = uCyan*s1*0.55 + uMag*s2*0.75 + vec3(0.85,0.95,1.0)*s3*0.5;
+        c += mix(uCyan, uMag, smoothstep(-0.5,0.5,N.x)) * fr * (0.28 + 0.5*uGlow);
+        vec2 p = (vUv-0.5)*2.0; float r = length(p); float ang = atan(p.y,p.x);
+        float arcW = smoothstep(0.075,0.0,abs(r-0.9)) * smoothstep(-0.1,0.6,cos(ang-2.45));         // white arc, upper-left
+        float arcC = smoothstep(0.05,0.0,abs(r-0.94)) * smoothstep(0.2,0.8,cos(ang-3.9));            // cyan arc, lower-left
+        float arcM = smoothstep(0.06,0.0,abs(r-0.9)) * smoothstep(0.1,0.85,cos(ang+0.2));            // magenta arc, right
+        c += vec3(0.8,0.92,1.0)*arcW*0.28 + uCyan*arcC*0.4 + uMag*arcM*0.45;
+        c += vec3(0.7,0.9,1.0) * smoothstep(0.1,0.0,abs(p.x+0.72-p.y*0.25)) * smoothstep(0.7,0.2,abs(p.y)) * 0.13;   // vertical softbox streak
+        gl_FragColor = vec4(c,1.0);
+      }`
+  });
+  const glass = new T.Mesh(ellPatch(VIS.lon0, VIS.lat0, VIS.a, VIS.b, 0, 1.0, (r) => 0.034 + 0.05 * (1 - r * r), 8, 56), glassMat); glass.renderOrder = 8; head.add(glass);
+  // visor frame (raised black bezel) + neon lip
+  const bezel = new T.Mesh(ellPatch(VIS.lon0, VIS.lat0, VIS.a, VIS.b, 0.985, 1.4, (r) => 0.012 + 0.07 * (1 - smooth(1.18, 1.4, r)) , 8, 72), plateMat); head.add(bezel);
+  {
+    const L = [], R = [];
+    for (let i = 0; i <= 40; i++) { const th = Math.PI / 2 + (i / 40) * Math.PI; const p = hp(VIS.lon0 + VIS.a * 1.0 * Math.cos(th), VIS.lat0 + VIS.b * 1.0 * Math.sin(th), 0.03); L.push(p); }
+    for (let i = 0; i <= 40; i++) { const th = Math.PI / 2 - (i / 40) * Math.PI; const p = hp(VIS.lon0 + VIS.a * 1.0 * Math.cos(th), VIS.lat0 + VIS.b * 1.0 * Math.sin(th), 0.03); R.push(p); }
+    tube(head, L, neonC, 0.008); tube(head, R, neonM, 0.008);
+  }
+  // helmet plates
+  const PL = [ // lonC, latC, lw, lh, off, bevel
+    [-0.62, 1.12, 1.4, 0.62, 0.05, 0.35], [0.7, 1.15, 1.5, 0.6, 0.05, 0.35], [0.05, 1.36, 0.9, 0.4, 0.055, 0.4],
+    [-1.62, 0.2, 0.62, 1.15, 0.045, 0.35], [1.62, 0.2, 0.62, 1.15, 0.045, 0.35],
+    [-1.5, 0.95, 0.7, 0.55, 0.04, 0.4], [1.45, 0.92, 0.75, 0.6, 0.045, 0.4],
+    [0.0, -1.14, 1.5, 0.48, 0.06, 0.35], [-1.05, -0.9, 0.85, 0.6, 0.045, 0.35], [1.05, -0.9, 0.85, 0.6, 0.05, 0.35],
+    [3.1, 0.55, 1.6, 1.0, 0.05, 0.3], [3.1, -0.65, 1.8, 0.6, 0.05, 0.3], [-2.2, 0.2, 1.1, 1.3, 0.04, 0.3], [2.2, 0.2, 1.1, 1.3, 0.04, 0.3],
+  ];
+  PL.slice(0, 0).forEach((p) => { const m = new T.Mesh(pillow(p[0], p[1], p[2], p[3], p[4], p[5], 3.5), plateMat); head.add(m); });
+  // helmet neon seams (lon,lat)
+  const seam = (arr, mat, r, off) => tube(head, arr.map((q) => hp(q[0], q[1], off || 0.016)), mat, (r || 0.013) * 0.7);
+  seam([[0.28, 1.38], [0.5, 1.25], [0.8, 1.05], [1.04, 0.84], [1.2, 0.6], [1.3, 0.3]], neonM, 0.016);
+  seam([[0.1, 1.44], [0.28, 1.38]], neonM, 0.012);
+  seam([[1.12, -0.52], [0.92, -0.86], [0.66, -1.06], [0.4, -1.16]], neonM, 0.014);
+  seam([[1.28, 0.5], [1.34, 0.15], [1.32, -0.2]], neonM, 0.012);
+  seam([[-0.55, 0.98], [-0.58, 1.2], [-0.52, 1.42]], neonC, 0.013);
+  seam([[-1.0, 0.9], [-1.15, 0.72]], neonC, 0.012);
+  seam([[-1.3, 0.5], [-1.36, 0.15], [-1.3, -0.25]], neonC, 0.013);
+  seam([[-1.1, -0.52], [-0.9, -0.84], [-0.62, -1.04], [-0.35, -1.14]], neonC, 0.013);
+  seam([[0.05, -1.3], [0.4, -1.28], [0.7, -1.2]], neonM, 0.01);
+  // back of helmet (visible when spun)
+  seam([[2.4, 0.9], [3.14, 1.0], [3.9, 0.9]], neonC, 0.014); seam([[2.5, -0.1], [3.14, 0.0], [3.8, -0.1]], neonM, 0.014); seam([[2.7, -0.75], [3.14, -0.8], [3.6, -0.75]], neonC, 0.012);
+  // ear cups (headphones)
+  for (const s of [-1, 1]) {
+    const cup = new T.Group(); cup.position.set(s * 1.0, 0.0, -0.06); head.add(cup);
+    const barrel = new T.Mesh(new T.CylinderGeometry(0.31, 0.33, 0.24, 36), plateMat); barrel.rotation.z = Math.PI / 2; cup.add(barrel);
+    const cap = new T.Mesh(new T.CylinderGeometry(0.25, 0.27, 0.05, 36), darkMat); cap.rotation.z = Math.PI / 2; cap.position.x = s * 0.14; cup.add(cap);
+    const ring = new T.Mesh(new T.TorusGeometry(0.235, 0.017, 8, 48), s < 0 ? neonC : neonM); ring.rotation.y = Math.PI / 2; ring.position.x = s * 0.168; cup.add(ring);
+    const ring2 = new T.Mesh(new T.TorusGeometry(0.13, 0.011, 8, 40), s < 0 ? neonC : neonM); ring2.rotation.y = Math.PI / 2; ring2.position.x = s * 0.17; cup.add(ring2);
+    const edge = new T.Mesh(new T.TorusGeometry(0.32, 0.022, 8, 40), darkMat); edge.rotation.y = Math.PI / 2; edge.position.x = s * 0.12; cup.add(edge);
+  }
+  // neck (ribbed) + collar
+  for (let i = 0; i < 6; i++) { const r = new T.Mesh(new T.TorusGeometry(0.58 - 0.005 * i, 0.062, 10, 40), darkMat); r.rotation.x = Math.PI / 2; r.position.set(0, -1.16 - i * 0.1, -0.02); body.add(r); }
+  const collar = new T.Mesh(new T.TorusGeometry(0.8, 0.14, 14, 56), plateMat); collar.rotation.x = Math.PI / 2 - 0.1; collar.position.set(0, -1.72, 0.02); body.add(collar);
+  { const pts = []; for (let i = 0; i <= 26; i++) { const a = -0.15 + (i / 26) * 1.6; pts.push(V(Math.sin(a) * 0.82, -1.62 + Math.cos(a) * 0.0 + 0.01, Math.cos(a) * 0.82 - 0.05)); } tube(body, pts.map((p) => V(p.x, -1.6, p.z)), neonC, 0.016); }
+
+  /* ---------- skull in the visor (cranium + animated jaw + two eyes), drawn in concept-crop units ---------- */
+  const KC = 0.9;                                         // canvas px per crop unit
+  const CR = { x0: 130, x1: 690, y0: 60, y1: 590 }, JW = { x0: 130, x1: 690, y0: 540, y1: 770 };
+  const SKX = 410;                                         // skull centre (crop units)
+  const crC = document.createElement("canvas"); crC.width = Math.round((CR.x1 - CR.x0) * KC); crC.height = Math.round((CR.y1 - CR.y0) * KC);
+  const jwC = document.createElement("canvas"); jwC.width = Math.round((JW.x1 - JW.x0) * KC); jwC.height = Math.round((JW.y1 - JW.y0) * KC);
+  const crT = new T.CanvasTexture(crC), jwT = new T.CanvasTexture(jwC); crT.colorSpace = jwT.colorSpace = T.SRGBColorSpace; crT.anisotropy = jwT.anisotropy = 4;
+  const eyeC = [0, 1].map(() => { const c = document.createElement("canvas"); c.width = 210; c.height = 168; return c; });
+  const eyeT = eyeC.map((c) => { const t = new T.CanvasTexture(c); t.colorSpace = T.SRGBColorSpace; return t; });
+  const colA = () => (Z.stale ? "#ff3b7a" : "#22d6ff"), colB = () => (Z.stale ? "#c23cff" : "#f53ad8");
+  function stroke(x, col, w, blur) { x.strokeStyle = col; x.lineWidth = w; x.shadowColor = col; x.shadowBlur = blur; x.lineJoin = x.lineCap = "round"; }
+  // crop units -> helmet (lon, lat)
+  const cLon = (cx) => Math.asin(clamp(0.32 * (cx - SKX) / 135, -0.98, 0.98)), cLat = (cy) => Math.asin(clamp((110 - 0.32 * cy) / 162, -0.98, 0.98));
+  function pxPatch(x0, x1, y0, y1, off, nu, nv) {
+    const pos = [], uv = [], idx = [];
+    for (let j = 0; j <= nv; j++) for (let i = 0; i <= nu; i++) { const s = i / nu, t = j / nv; const p = hp(cLon(x0 + s * (x1 - x0)), cLat(y1 - t * (y1 - y0)), off); pos.push(p.x, p.y, p.z); uv.push(s, t); }
+    for (let j = 0; j < nv; j++) for (let i = 0; i < nu; i++) { const A = j * (nu + 1) + i, B = A + 1, C = A + nu + 1, D = C + 1; idx.push(A, B, C, B, D, C); }
+    return mkGeo(pos, uv, idx);
+  }
+  const mir = (px) => 2 * SKX - px;
+  function drawSkullBase() {
+    const A = colA(), B = colB();
+    let x = crC.getContext("2d"); x.setTransform(1, 0, 0, 1, 0, 0); x.clearRect(0, 0, crC.width, crC.height); x.setTransform(KC, 0, 0, KC, -CR.x0 * KC, -CR.y0 * KC);
+    // face outline: top centre -> left cheek flare -> maxilla down to the teeth, mirrored
+    const half = (m) => { const X = (v) => (m ? mir(v) : v); return [[X(410), 100], [X(335), 100, X(262), 120, X(232), 196], [X(212), 250, X(208), 330, X(226), 392], [X(218), 408], [X(232), 420, X(262), 432], [X(305), 455, X(322), 520], [X(325), 566]]; };
+    const trace = (m, rev) => { const h = half(m); const seq = rev ? h.slice().reverse() : h; return seq; };
+    const outline = () => { x.beginPath(); const L = half(0); x.moveTo(L[0][0], L[0][1]); x.bezierCurveTo(L[1][0], L[1][1], L[1][2], L[1][3], L[1][4], L[1][5]); x.bezierCurveTo(L[2][0], L[2][1], L[2][2], L[2][3], L[2][4], L[2][5]); x.lineTo(L[3][0], L[3][1]); x.quadraticCurveTo(L[4][0], L[4][1], L[4][2], L[4][3]); x.quadraticCurveTo(L[5][0], L[5][1], L[5][2], L[5][3]); x.lineTo(L[6][0], L[6][1]);
+      const R = half(1); x.moveTo(R[0][0], R[0][1]); x.bezierCurveTo(R[1][0], R[1][1], R[1][2], R[1][3], R[1][4], R[1][5]); x.bezierCurveTo(R[2][0], R[2][1], R[2][2], R[2][3], R[2][4], R[2][5]); x.lineTo(R[3][0], R[3][1]); x.quadraticCurveTo(R[4][0], R[4][1], R[4][2], R[4][3]); x.quadraticCurveTo(R[5][0], R[5][1], R[5][2], R[5][3]); x.lineTo(R[6][0], R[6][1]); };
+    // soft inner tint + stars inside the skull
+    x.save(); x.beginPath(); { const L = half(0), R = half(1); x.moveTo(L[0][0], L[0][1]); x.bezierCurveTo(L[1][0], L[1][1], L[1][2], L[1][3], L[1][4], L[1][5]); x.bezierCurveTo(L[2][0], L[2][1], L[2][2], L[2][3], L[2][4], L[2][5]); x.lineTo(L[6][0], L[6][1]); x.lineTo(R[6][0], R[6][1]); x.lineTo(R[2][4], R[2][5]); x.bezierCurveTo(R[2][2], R[2][3], R[2][0], R[2][1], R[1][4], R[1][5]); x.bezierCurveTo(R[1][2], R[1][3], R[1][0], R[1][1], R[0][0], R[0][1]); x.closePath(); }
+    x.fillStyle = "rgba(24,70,120,.10)"; x.fill(); x.clip(); x.shadowBlur = 0;
+    for (let i = 0; i < 70; i++) { const k = rnd(); x.fillStyle = k < .5 ? "rgba(200,240,255,.7)" : k < .8 ? "rgba(255,130,235,.65)" : "rgba(90,220,255,.7)"; const s = rnd() < .1 ? 2.2 : 1.2; x.fillRect(225 + rnd() * 370, 105 + rnd() * 460, s, s); }
+    x.restore();
+    // inner contour (thin, offset) for the xray look
+    x.save(); x.translate(SKX, 330); x.scale(0.93, 0.95); x.translate(-SKX, -330); stroke(x, A, 1.1, 4); x.globalAlpha = 0.45; outline(); x.stroke(); x.restore();
+    // main cyan outline: glow + thin white-hot core
+    stroke(x, A, 3.4, 20); outline(); x.stroke(); stroke(x, "rgba(225,252,255,.9)", 1.2, 0); outline(); x.stroke();
+    // veins / cracks
+    stroke(x, B, 2.6, 14); x.beginPath(); x.moveTo(520, 132); x.bezierCurveTo(548, 170, 540, 215, 505, 250); x.bezierCurveTo(480, 275, 485, 300, 500, 318); x.stroke();
+    stroke(x, B, 2.2, 12); x.beginPath(); x.moveTo(612, 96); x.bezierCurveTo(600, 140, 582, 170, 560, 200); x.stroke();
+    stroke(x, A, 1.3, 6); x.beginPath(); x.moveTo(285, 190); x.bezierCurveTo(262, 240, 262, 300, 280, 340); x.moveTo(555, 196); x.bezierCurveTo(580, 250, 584, 300, 566, 346); x.moveTo(330, 250); x.lineTo(300, 300); x.moveTo(470, 140); x.lineTo(452, 210); x.stroke();
+    stroke(x, A, 1.1, 5); x.globalAlpha = 0.7; x.beginPath(); x.moveTo(236, 402); x.lineTo(270, 418); x.moveTo(584, 402); x.lineTo(550, 418); x.moveTo(300, 452); x.lineTo(340, 470); x.moveTo(520, 452); x.lineTo(480, 470); x.stroke(); x.globalAlpha = 1;
+    // nose (inverted heart)
+    const nose = () => { x.beginPath(); x.moveTo(410, 482); x.bezierCurveTo(386, 508, 356, 484, 360, 438); x.bezierCurveTo(363, 406, 386, 390, 410, 392); x.bezierCurveTo(434, 390, 458, 406, 461, 438); x.bezierCurveTo(465, 484, 434, 508, 410, 482); };
+    stroke(x, B, 3.4, 16); nose(); x.stroke(); stroke(x, "rgba(255,200,250,.8)", 1.1, 0); nose(); x.stroke();
+    // upper teeth
+    stroke(x, B, 2.4, 10); x.beginPath(); for (let i = 0; i <= 10; i++) { const px = 325 + i * 17; x.moveTo(px, 540); x.lineTo(px, 566); } x.moveTo(325, 540); x.quadraticCurveTo(410, 528, 495, 540); x.stroke();
     crT.needsUpdate = true;
     // jaw
-    const j = jwC.getContext("2d"); j.clearRect(0, 0, 512, 256);
-    j.beginPath(); j.moveTo(172, 4); j.lineTo(340, 4); j.lineTo(326, 70); j.quadraticCurveTo(318, 140, 256, 150); j.quadraticCurveTo(194, 140, 186, 70); j.closePath();
-    j.fillStyle = "rgba(20,40,70,.25)"; j.fill(); glowStroke(j, A, 6, 20); j.stroke();
-    glowStroke(j, B, 3, 14); j.beginPath(); j.moveTo(184, 44); j.lineTo(328, 44); j.stroke();
-    glowStroke(j, A, 3, 12); for (let i = 0; i < 7; i++) { const px = 200 + i * 20.5; j.beginPath(); j.moveTo(px, 6); j.lineTo(px, 44); j.stroke(); for (let k = 0; k < 1; k++) { j.beginPath(); j.moveTo(px, 44); j.lineTo(px + 0, 80 + Math.abs(3 - i) * -6 + 16); j.stroke(); } }
+    x = jwC.getContext("2d"); x.setTransform(1, 0, 0, 1, 0, 0); x.clearRect(0, 0, jwC.width, jwC.height); x.setTransform(KC, 0, 0, KC, -JW.x0 * KC, -JW.y0 * KC);
+    const jawP = () => { x.beginPath(); x.moveTo(325, 566); x.bezierCurveTo(328, 620, 345, 668, 385, 690); x.quadraticCurveTo(410, 702, 435, 690); x.bezierCurveTo(475, 668, 492, 620, 495, 566); };
+    x.save(); jawP(); x.closePath(); x.fillStyle = "rgba(24,70,120,.10)"; x.fill(); x.restore();
+    x.save(); x.translate(SKX, 620); x.scale(0.9, 0.9); x.translate(-SKX, -620); stroke(x, A, 1.1, 4); x.globalAlpha = 0.45; jawP(); x.stroke(); x.restore();
+    stroke(x, A, 3.2, 18); jawP(); x.stroke(); stroke(x, "rgba(225,252,255,.9)", 1.2, 0); jawP(); x.stroke();
+    stroke(x, B, 2.4, 10); x.beginPath(); for (let i = 0; i <= 10; i++) { const px = 325 + i * 17; x.moveTo(px, 566); x.lineTo(px, 598); } x.moveTo(325, 566); x.lineTo(495, 566); x.moveTo(325, 598); x.quadraticCurveTo(410, 612, 495, 598); x.stroke();
+    stroke(x, A, 1.2, 5); x.globalAlpha = 0.6; x.beginPath(); x.moveTo(350, 640); x.lineTo(380, 668); x.moveTo(470, 640); x.lineTo(440, 668); x.moveTo(410, 612); x.lineTo(410, 690); x.stroke(); x.globalAlpha = 1;
     jwT.needsUpdate = true;
   }
-  const bend = (geo, k, z0) => { const p = geo.attributes.position; for (let i = 0; i < p.count; i++) { const x = p.getX(i), y = p.getY(i); p.setZ(i, z0 - k * (x * x + y * y)); } geo.computeVertexNormals(); return geo; };
-  const skullMat = (map) => new T.MeshBasicMaterial({ map, transparent: true, depthWrite: false, blending: T.AdditiveBlending, toneMapped: false, color: 0xffffff });
-  const cranMat = skullMat(crT), jawMat = skullMat(jwT);
-  const cranium = new T.Mesh(bend(new T.PlaneGeometry(1.25, 1.25, 12, 12), 0.4, 1.08), cranMat); cranium.position.set(0, 0.08, 0); cranium.renderOrder = 3; head.add(cranium);
-  const jaw = new T.Mesh(bend(new T.PlaneGeometry(1.25, 0.625, 12, 6), 0.4, 1.08), jawMat); jaw.position.set(0, -0.5, 0); jaw.renderOrder = 3; head.add(jaw);
-  const JAW_Y0 = -0.5;
-  // visor glow sheet (tinted overlay in front of the skull)
-  const glowMat = new T.MeshBasicMaterial({ color: CYAN, transparent: true, opacity: 0.12, blending: T.AdditiveBlending, depthWrite: false, toneMapped: false });
-  const glowSheet = new T.Mesh(new T.SphereGeometry(1, 40, 28), glowMat); glowSheet.scale.set(0.795, 0.715, 0.745); glowSheet.position.set(0, 0, 0.45); glowSheet.renderOrder = 6; head.add(glowSheet);
-
-  // headphones / ear pieces + helmet neon
-  for (const s of [-1, 1]) {
-    const ear = new T.Mesh(new T.CylinderGeometry(0.27, 0.27, 0.2, 28), suit2); ear.rotation.z = Math.PI / 2; ear.position.set(s * 1.0, -0.02, -0.05); head.add(ear);
-    const ring = new T.Mesh(new T.TorusGeometry(0.22, 0.016, 8, 40), s < 0 ? neonC : neonP); ring.rotation.y = Math.PI / 2; ring.position.set(s * 1.115, -0.02, -0.05); head.add(ring);
-    const arm = new T.Mesh(new T.CylinderGeometry(0.03, 0.03, 0.5, 8), suit2); arm.position.set(s * 0.98, 0.38, 0.0); arm.rotation.z = s * 0.12; head.add(arm);
+  function drawEye(i, kind, side) {
+    const cv = eyeC[i], x = cv.getContext("2d"); x.setTransform(1, 0, 0, 1, 0, 0); x.clearRect(0, 0, cv.width, cv.height); x.setTransform(3, 0, 0, 3, 105, 84);
+    const A = colA(), B = colB(); const rx = 22, ry = 14; const inner = -side * 18, outer = side * 22;
+    const pupil = (r1, r2, dy) => { x.shadowBlur = 10; x.fillStyle = "rgba(245,58,216,.55)"; x.beginPath(); x.ellipse(0, dy || 0, r1 * 0.34, r2 * 0.34, 0, 0, 7); x.fill(); x.shadowBlur = 0; x.fillStyle = "rgba(255,225,252,.9)"; x.beginPath(); x.ellipse(-0.6, (dy || 0) - 0.6, r1 * 0.14, r2 * 0.14, 0, 0, 7); x.fill(); };
+    const sockFill = (a) => { x.fillStyle = `rgba(245,58,216,${a})`; x.fill(); };
+    const socket = (ry2, w, fillA) => { x.beginPath(); x.ellipse(0, 0, rx, ry2, 0, 0, 7); sockFill(fillA === undefined ? 0.04 : fillA); stroke(x, B, w || 2.2, 11); x.stroke(); stroke(x, "rgba(255,205,250,.85)", 0.8, 0); x.stroke(); };
+    const brow = (y0, y1, col) => { stroke(x, col || A, 2.4, 14); x.beginPath(); x.moveTo(outer, y0); x.lineTo(inner, y1); x.stroke(); };
+    const arcUp = (w) => { stroke(x, B, w || 3.6, 22); x.beginPath(); x.moveTo(-rx, 6); x.quadraticCurveTo(0, -20, rx, 6); x.stroke(); };
+    switch (kind) {
+      case "happy": arcUp(3.6); break;
+      case "laugh": arcUp(4.2); stroke(x, B, 2, 14); x.beginPath(); x.moveTo(-rx + 4, 10); x.quadraticCurveTo(0, -12, rx - 4, 10); x.stroke(); break;
+      case "wink": stroke(x, B, 3.6, 22); x.beginPath(); x.moveTo(-rx, -2); x.quadraticCurveTo(0, 10, rx, -2); x.stroke(); break;
+      case "sleepy": stroke(x, B, 3.4, 18); x.beginPath(); x.moveTo(-rx, -3); x.quadraticCurveTo(0, 9, rx, -3); x.stroke(); stroke(x, B, 1.6, 10); x.beginPath(); x.moveTo(-rx + 3, 2); x.lineTo(-rx - 1, 6); x.moveTo(0, 6); x.lineTo(0, 11); x.moveTo(rx - 3, 2); x.lineTo(rx + 1, 6); x.stroke(); break;
+      case "focused": case "think": socket(8.5, 2.8); pupil(8, 4.2); brow(-17, -9); break;
+      case "alert": socket(11, 2.8); pupil(8, 6); brow(-21, -7, B); break;
+      case "surprised": x.beginPath(); x.arc(0, 0, 17, 0, 7); sockFill(0.14); stroke(x, B, 2.8, 22); x.stroke(); pupil(4.5, 4.5); stroke(x, A, 2.3, 14); x.beginPath(); x.moveTo(-18, -24); x.quadraticCurveTo(0, -31, 18, -24); x.stroke(); break;
+      case "worried": socket(14, 2.8); pupil(7, 7, 3); brow(-12, -23); stroke(x, A, 1.6, 12); x.beginPath(); x.moveTo(side * -6, 18); x.quadraticCurveTo(side * -8, 24, side * -4, 25); x.stroke(); break;
+      case "annoyed": { x.beginPath(); x.ellipse(0, 3, rx, 11, 0, 0, Math.PI); x.closePath(); sockFill(0.2); stroke(x, B, 2.8, 22); x.stroke(); stroke(x, A, 3, 14); x.beginPath(); x.moveTo(outer, -7); x.lineTo(inner, 1); x.stroke(); pupil(6, 4, 7); break; }
+      case "dizzy": { stroke(x, B, 2.4, 16); x.beginPath(); for (let t = 0; t < Math.PI * 5; t += 0.2) { const r = t * 1.45, px = Math.cos(t) * r, py = Math.sin(t) * r; t ? x.lineTo(px, py) : x.moveTo(px, py); } x.stroke(); break; }
+      default: socket(ry, 2.8); pupil(9.5, 6.5);
+    }
+    eyeT[i].needsUpdate = true;
   }
-  const hs = (lon, lat) => new T.Vector3(Math.cos(lat) * Math.sin(lon), Math.sin(lat), Math.cos(lat) * Math.cos(lon)).multiplyScalar(1.012);
-  const line = (fn, a, b, n) => Array.from({ length: n + 1 }, (_, i) => fn(a + (b - a) * i / n));
-  head.add(tube(line((l) => hs(-0.95, l), 0.35, 1.45, 22), neonC, 0.016));
-  head.add(tube(line((l) => hs(0.95, l), 0.35, 1.45, 22), neonP, 0.016));
-  head.add(tube(line((l) => hs(l, 1.12), -0.8, 0.8, 22), neonC, 0.014));
-  head.add(tube(line((l) => hs(l, 1.12), 2.2, 3.6, 22), neonP, 0.014));
-  head.add(tube(line((l) => hs(-0.45 + l * 0.0, l), 0.9, 1.5, 12).map((v) => v), neonP, 0.012));
-  // back of helmet lines (for spinning)
-  head.add(tube(line((l) => hs(l, 0.15), 2.3, 4.0, 30), neonC, 0.014));
+  const LOOK = { neutral: ["neutral", "neutral"], happy: ["happy", "happy"], laugh: ["laugh", "laugh"], joke: ["happy", "wink"], think: ["focused", "focused"], focused: ["focused", "focused"], alert: ["alert", "alert"], surprised: ["surprised", "surprised"], worried: ["worried", "worried"], annoyed: ["annoyed", "annoyed"], sleepy: ["sleepy", "sleepy"], dizzy: ["dizzy", "dizzy"] };
+  let drawnLook = "";
+  function setLook(k) { if (k === drawnLook) return; drawnLook = k; const L = LOOK[k] || LOOK.neutral; drawEye(0, L[0], -1); drawEye(1, L[1], 1); }
+  const addMat = (map) => new T.MeshBasicMaterial({ map, transparent: true, depthWrite: false, blending: T.AdditiveBlending, toneMapped: false, color: 0xffffff });
+  const cranMat = addMat(crT), jawMat = addMat(jwT), eyeMat = [addMat(eyeT[0]), addMat(eyeT[1])];
+  const SKOFF = 0.022;
+  const cranium = new T.Mesh(pxPatch(CR.x0, CR.x1, CR.y0, CR.y1, SKOFF, 24, 20), cranMat); cranium.renderOrder = 3; head.add(cranium);
+  const jaw = new T.Mesh(pxPatch(JW.x0, JW.x1, JW.y0, JW.y1, SKOFF, 24, 8), jawMat); jaw.renderOrder = 3; head.add(jaw);
+  const eyeLat = cLat(368), eyeLon = cLon(505), eyeW = 70 / 135 * 1.0, eyeH = 56 / 162;
+  const eyes = [-1, 1].map((s, i) => { const m = new T.Mesh(rectPatch(s * eyeLon, eyeLat, eyeW, eyeH, SKOFF + 0.004, 6, 6), eyeMat[i]); m.renderOrder = 4; head.add(m); return m; });
+  // eye meshes rotate about their own centre (dizzy spiral): wrap each in a pivot at the socket centre
+  const eyePiv = eyes.map((m, i) => { const c = hp((i ? 1 : -1) * eyeLon, eyeLat, SKOFF); const p = new T.Group(); p.position.copy(c); head.add(p); head.remove(m); m.position.copy(c).multiplyScalar(-1); p.add(m); p.userData.n = c.clone().normalize(); return p; });
+  const JAW_Y0 = 0;
+  // sleeping Z
+  const zSpr = (() => { const c = document.createElement("canvas"); c.width = c.height = 128; const x = c.getContext("2d"); x.font = "bold 84px 'Exo 2',Arial,sans-serif"; x.textAlign = "center"; x.textBaseline = "middle"; x.fillStyle = "#bff6ff"; x.shadowColor = "#22d6ff"; x.shadowBlur = 24; x.fillText("z", 56, 70); x.font = "bold 46px Arial"; x.fillText("Z", 98, 34);
+    const s = new T.Sprite(new T.SpriteMaterial({ map: new T.CanvasTexture(c), transparent: true, opacity: 0, depthWrite: false, blending: T.AdditiveBlending, toneMapped: false })); s.scale.set(0.9, 0.9, 1); s.position.set(1.15, 1.0, 0.6); head.add(s); return s; })();
 
-  // neck + torso
-  const neck = new T.Mesh(new T.CylinderGeometry(0.46, 0.55, 0.5, 28), suit2); neck.position.set(0, 0.0, 0); body.add(neck);
-  const neckRing = new T.Mesh(new T.TorusGeometry(0.5, 0.02, 8, 48), neonC); neckRing.rotation.x = Math.PI / 2; neckRing.position.set(0, 0.2, 0); body.add(neckRing);
-  const chest = new T.Group(); body.add(chest);
-  const TC = new T.Vector3(0, -0.9, 0), TR = new T.Vector3(1.75, 1.05, 0.95);
-  const torso = new T.Mesh(new T.SphereGeometry(1, 64, 40), suit); torso.scale.copy(TR); torso.position.copy(TC); chest.add(torso);
-  const ts = (lon, lat) => new T.Vector3(TR.x * Math.cos(lat) * Math.sin(lon), TC.y + TR.y * Math.sin(lat), TR.z * Math.cos(lat) * Math.cos(lon)).multiplyScalar(1.02).add(new T.Vector3(0, TC.y * -0.02, 0));
-  for (const s of [-1, 1]) {
-    const pad = new T.Mesh(new T.SphereGeometry(1, 36, 24), suit2); pad.scale.set(0.62, 0.5, 0.62); pad.position.set(s * 1.52, -0.38, -0.02); pad.rotation.z = s * -0.35; chest.add(pad);
-    const padRing = new T.Mesh(new T.TorusGeometry(0.55, 0.018, 8, 40), s < 0 ? neonC : neonP); padRing.scale.set(1, 0.85, 1); padRing.position.set(s * 1.52, -0.38, -0.02); padRing.rotation.set(0, s * Math.PI / 2.4, 0); chest.add(padRing);
-    chest.add(tube(line((l) => ts(s * l, 0.62), 0.25, 1.1, 18), s < 0 ? neonC : neonP, 0.022));
-    chest.add(tube(line((l) => ts(s * 0.42, l), -0.35, 0.58, 14), s < 0 ? neonP : neonC, 0.022));
-    chest.add(tube(line((l) => ts(s * 0.95, l), -0.45, 0.45, 14), s < 0 ? neonC : neonP, 0.02));
+  /* ---------- torso: super-ellipsoid shoulders/chest, pauldrons, collar plates, neon strips, ZERO badge ---------- */
+  const sp = (w, m) => Math.sign(w) * Math.pow(Math.abs(w), m);
+  function superGeo(a, b, c, p, ws, hs) {
+    const e = 2 / p, pos = [], uv = [], idx = [];
+    for (let j = 0; j <= hs; j++) { const lat = -Math.PI / 2 + Math.PI * j / hs; for (let i = 0; i <= ws; i++) { const lon = -Math.PI + 2 * Math.PI * i / ws;
+      const cl = sp(Math.cos(lat), e), sl = sp(Math.sin(lat), e), co = sp(Math.cos(lon), e), so = sp(Math.sin(lon), e);
+      pos.push(a * cl * so, b * sl, c * cl * co); uv.push(i / ws, j / hs); } }
+    for (let j = 0; j < hs; j++) for (let i = 0; i < ws; i++) { const A = j * (ws + 1) + i, B = A + 1, C = A + ws + 1, D = C + 1; idx.push(A, B, C, B, D, C); }
+    return mkGeo(pos, uv, idx);
   }
-  chest.add(tube(line((l) => ts(l, -0.4), -1.0, 1.0, 26), neonP, 0.02));
-  // chest badge ("ZERO")
-  const bC = document.createElement("canvas"); bC.width = 512; bC.height = 180; const bx = bC.getContext("2d");
-  bx.fillStyle = "#050c14"; bx.fillRect(0, 0, 512, 180);
-  const gr = bx.createLinearGradient(0, 0, 512, 0); gr.addColorStop(0, "#2dd4ff"); gr.addColorStop(.5, "#2dd4ff"); gr.addColorStop(.55, "#ff3b7a"); gr.addColorStop(1, "#ff3b7a");
-  bx.strokeStyle = gr; bx.lineWidth = 10; bx.shadowColor = "#2dd4ff"; bx.shadowBlur = 16; bx.beginPath(); bx.moveTo(30, 8); bx.lineTo(482, 8); bx.lineTo(504, 30); bx.lineTo(504, 150); bx.lineTo(482, 172); bx.lineTo(30, 172); bx.lineTo(8, 150); bx.lineTo(8, 30); bx.closePath(); bx.stroke();
-  bx.font = "italic 800 104px 'Exo 2','Arial Black',system-ui,sans-serif"; bx.textAlign = "center"; bx.textBaseline = "middle"; bx.fillStyle = "#e6fbff"; bx.shadowColor = "#2dd4ff"; bx.shadowBlur = 22; bx.fillText("ZERO", 256, 94);
-  const bT = new T.CanvasTexture(bC); bT.colorSpace = T.SRGBColorSpace;
-  const badge = new T.Mesh(new T.PlaneGeometry(0.78, 0.274), new T.MeshBasicMaterial({ map: bT, toneMapped: false }));
-  badge.position.set(0, -0.62, 0.965); badge.rotation.x = -0.3; chest.add(badge);
-
-  // holographic HUD rings
-  const ringTex = (() => {
-    const c = document.createElement("canvas"); c.width = c.height = 1024; const x = c.getContext("2d"); x.translate(512, 512); x.lineCap = "round"; x.shadowBlur = 14;
-    const arc = (r, a0, a1, w, col) => { x.strokeStyle = col; x.shadowColor = col; x.lineWidth = w; x.beginPath(); x.arc(0, 0, r, a0, a1); x.stroke(); };
-    for (let i = 0; i < 4; i++) arc(470, i * Math.PI / 2 + 0.12, i * Math.PI / 2 + 1.3, 6, i % 2 ? "#ff3b7a" : "#2dd4ff");
-    for (let i = 0; i < 72; i++) { const a = i / 72 * Math.PI * 2, l = i % 6 === 0 ? 34 : 14; x.strokeStyle = i % 6 === 0 ? "#2dd4ff" : "rgba(45,212,255,.55)"; x.shadowColor = "#2dd4ff"; x.lineWidth = i % 6 === 0 ? 4 : 2; x.beginPath(); x.moveTo(Math.cos(a) * 430, Math.sin(a) * 430); x.lineTo(Math.cos(a) * (430 - l), Math.sin(a) * (430 - l)); x.stroke(); }
-    arc(380, 0.3, 2.4, 3, "rgba(255,59,122,.9)"); arc(380, 3.6, 5.4, 3, "rgba(45,212,255,.9)"); arc(330, 0, Math.PI * 2, 1.5, "rgba(45,212,255,.35)");
-    x.fillStyle = "#2dd4ff"; x.font = "bold 24px ui-monospace,monospace"; x.textAlign = "center"; x.shadowBlur = 8; x.fillText("Z E R O  ·  L I N K", 0, -486 + 0);
-    const t = new T.CanvasTexture(c); t.colorSpace = T.SRGBColorSpace; t.anisotropy = 4; return t;
-  })();
-  const ringMat = (op) => new T.MeshBasicMaterial({ map: ringTex, transparent: true, opacity: op, blending: T.AdditiveBlending, depthWrite: false, side: T.DoubleSide, toneMapped: false });
-  const hudBack = new T.Mesh(new T.PlaneGeometry(4.0, 4.0), ringMat(0.55)); hudBack.position.set(0, 1.05, -0.9); hudBack.renderOrder = -1; body.add(hudBack);
-  const hudRingMat = ringMat(0.6);
-  const hudFlat = new T.Mesh(new T.RingGeometry(1.55, 1.62, 96), bm(CYAN, 1.4, { transparent: true, opacity: 0.5, side: T.DoubleSide, depthWrite: false, blending: T.AdditiveBlending }));
-  hudFlat.rotation.x = Math.PI / 2 - 0.25; hudFlat.position.set(0, 0.85, 0); body.add(hudFlat);
-  const hudFlat2 = new T.Mesh(new T.RingGeometry(1.8, 1.83, 96, 1, 0, Math.PI * 1.4), bm(PINK, 1.4, { transparent: true, opacity: 0.6, side: T.DoubleSide, depthWrite: false, blending: T.AdditiveBlending }));
-  hudFlat2.rotation.x = Math.PI / 2 - 0.25; hudFlat2.position.set(0, 0.85, 0); body.add(hudFlat2);
+  const KA = [[-1.2, 0.74], [-1.5, 1.02], [-2.0, 1.85], [-2.45, 2.36], [-3.1, 2.5], [-4.7, 2.3]], KC2 = [[-1.2, 0.66], [-2.0, 0.98], [-3.0, 1.2], [-4.7, 1.2]];
+  const keyed = (K, y) => { if (y >= K[0][0]) return K[0][1]; for (let i = 0; i < K.length - 1; i++) { if (y <= K[i][0] && y >= K[i + 1][0]) { const t = (K[i][0] - y) / (K[i][0] - K[i + 1][0]); return K[i][1] + (K[i + 1][1] - K[i][1]) * t * t * (3 - 2 * t); } } return K[K.length - 1][1]; };
+  const TSP = 3.2, TOPY = -1.2, BOTY = -4.7;
+  const bodyGeo = (() => { const ws = 72, hs = 40, pos = [], uv = [], idx = [], e = 2 / TSP;
+    for (let j = 0; j <= hs; j++) { const y = TOPY + (BOTY - TOPY) * j / hs; const a = keyed(KA, y), c = keyed(KC2, y); for (let i = 0; i <= ws; i++) { const lon = -Math.PI + 2 * Math.PI * i / ws; pos.push(a * sp(Math.sin(lon), e), y, c * sp(Math.cos(lon), e)); uv.push(i / ws, j / hs); } }
+    for (let j = 0; j < hs; j++) for (let i = 0; i < ws; i++) { const A = j * (ws + 1) + i, B = A + 1, C = A + ws + 1, D = C + 1; idx.push(A, C, B, B, C, D); }
+    return mkGeo(pos, uv, idx); })();
+  const torsoMat = (() => {
+    const W = 1024, Hh = 1024, mk = () => { const c = document.createElement("canvas"); c.width = W; c.height = Hh; return c; };
+    const cc = mk(), bb = mk(), x = cc.getContext("2d"), y = bb.getContext("2d");
+    x.fillStyle = "#1a1e26"; x.fillRect(0, 0, W, Hh); y.fillStyle = "#808080"; y.fillRect(0, 0, W, Hh);
+    let s3 = 7; const r3 = () => { s3 = (s3 * 16807) % 2147483647; return s3 / 2147483647; };
+    const panel = (X0, X1, Y0, Y1) => { const w = X1 - X0, h = Y1 - Y0, ins = 3; const k = 34 + r3() * 18;
+      const g = x.createLinearGradient(X0, Y0, X1, Y1); g.addColorStop(0, `rgb(${k + 12},${k + 16},${k + 24})`); g.addColorStop(1, `rgb(${k - 8},${k - 6},${k})`); x.fillStyle = g; x.fillRect(X0 + ins, Y0 + ins, w - 2 * ins, h - 2 * ins);
+      y.fillStyle = "#969696"; y.fillRect(X0 + ins + 3, Y0 + ins + 3, w - 2 * ins - 6, h - 2 * ins - 6); y.strokeStyle = "#fff"; y.lineWidth = 3; y.strokeRect(X0 + ins + 2, Y0 + ins + 2, w - 2 * ins - 4, h - 2 * ins - 4);
+      x.strokeStyle = "rgba(190,215,250,.6)"; x.lineWidth = 2; x.beginPath(); x.moveTo(X0 + ins, Y1 - ins); x.lineTo(X0 + ins, Y0 + ins); x.lineTo(X1 - ins, Y0 + ins); x.stroke();
+      x.strokeStyle = "rgba(0,0,0,.9)"; x.lineWidth = 3; x.beginPath(); x.moveTo(X1 - ins, Y0 + ins); x.lineTo(X1 - ins, Y1 - ins); x.lineTo(X0 + ins, Y1 - ins); x.stroke(); };
+    const rowsY = [0, 0.06, 0.18, 0.34, 0.52, 0.74, 1.0];
+    for (let r = 0; r < rowsY.length - 1; r++) { const n = 6 + Math.floor(r3() * 3); let X = 0; const cuts = [0]; for (let i = 1; i < n; i++) cuts.push((i + (r3() - 0.5) * 0.6) / n * W); cuts.push(W); for (let i = 0; i < cuts.length - 1; i++) panel(cuts[i], cuts[i + 1], rowsY[r] * Hh, rowsY[r + 1] * Hh); }
+    const ct = new T.CanvasTexture(cc); ct.colorSpace = T.SRGBColorSpace; ct.anisotropy = 4; ct.wrapS = T.RepeatWrapping; const bt = new T.CanvasTexture(bb); bt.anisotropy = 4; bt.wrapS = T.RepeatWrapping;
+    const m = new T.MeshPhysicalMaterial({ map: ct, bumpMap: bt, bumpScale: 1.4, color: 0xffffff, metalness: 0.45, roughness: 0.38, clearcoat: 0.6, clearcoatRoughness: 0.25, envMapIntensity: 1.3 }); addRim(m, 1.0, 6); return m; })();
+  const torso = new T.Mesh(bodyGeo, torsoMat); torsoG.add(torso);
+  const tz = (x, y) => { if (y > TOPY || y < BOTY) return null; const a = keyed(KA, y), c = keyed(KC2, y); const q = 1 - Math.pow(Math.abs(x / a), TSP); return q > 0.0005 ? c * Math.pow(q, 1 / TSP) : null; };
+  const tP = (x, y, lift) => { const z = tz(x, y); return V(x, y, (z == null ? 0.2 : z) + (lift || 0.03)); };
+  const tN = (x, y) => { const d = 0.02, z0 = tz(x, y), zx = tz(x + d, y), zy = tz(x, y + d); if (z0 == null || zx == null || zy == null) return V(0, 0, 1); return V(-(zx - z0) / d, -(zy - z0) / d, 1).normalize(); };
+  const zAxis = V(0, 0, 1);
+  function plateAt(x, y, w, h, th, roll, mat, par) {
+    const g = superGeo(w / 2, h / 2, th, 3.4, 20, 12), m = new T.Mesh(g, mat || plateMat), n = tN(x, y), pnt = tP(x, y, -th * 0.45);
+    m.position.copy(pnt).add(V(0, 0, 0)); m.quaternion.setFromUnitVectors(zAxis, n); m.rotateZ(roll || 0); (par || torsoG).add(m); return m;
+  }
+  const W2 = (px, py) => [(px - 530) / 135, -(py - 182) / 135];          // concept pixel -> world (head centre = origin)
+  function chestLine(pts, mat, r, lift) { tube(torsoG, pts.map((q) => { const w = W2(q[0], q[1]); return tP(w[0], w[1], lift || 0.035); }), mat, r || 0.022); }
+  // chest plates: two low, wide armour panels either side of the badge
+  { const c = W2(557, 478); plateAt(c[0] - 0.05, c[1] + 0.02, 1.35, 0.7, 0.03, 0, plateMat); }
+  { const c = W2(530, 392); plateAt(c[0], c[1], 1.5, 0.26, 0.03, 0, plateMat); }
+  // pauldrons
+  const PD = { a: 1.05, b: 0.5, c: 0.7, p: 4.6 };
+  const pauld = [-1, 1].map((s) => {
+    const g = new T.Group(); g.position.set(s * 2.0, -2.32, 0.0); g.rotation.z = -s * 0.42; torsoG.add(g);
+    const m = new T.Mesh(superGeo(PD.a, PD.b, PD.c, PD.p, 48, 32), plateMat); g.add(m);
+    const pz = (x, y) => { const q = 1 - Math.pow(Math.abs(x / PD.a), PD.p) - Math.pow(Math.abs(y / PD.b), PD.p); return q > 0 ? PD.c * Math.pow(q, 1 / PD.p) + 0.03 : 0.2; };
+    const ln = (arr, mat, r) => tube(g, arr.map((q) => V(q[0], q[1], pz(q[0], q[1]))), mat, r || 0.022);
+    if (s > 0) { ln([[-0.62, 0.42], [-0.2, 0.3], [0.3, 0.12], [0.72, -0.1]], neonM, 0.026); ln([[0.25, -0.38], [0.5, -0.44], [0.78, -0.5]], neonC, 0.02); ln([[-0.3, -0.05], [0.05, -0.12]], neonM, 0.014); }
+    else { ln([[-0.6, -0.2], [-0.4, -0.38], [-0.12, -0.5]], neonM, 0.022); ln([[0.1, 0.05], [0.32, -0.12], [0.4, -0.3]], neonC, 0.02); ln([[-0.2, 0.3], [0.3, 0.38]], neonC, 0.012); }
+    // plate seams (dark inset lines)
+    const grv = new T.Mesh(new T.TorusGeometry(0.66, 0.012, 6, 40, Math.PI), darkMat); grv.position.set(0, -0.05, 0.62); grv.rotation.z = Math.PI * 0.1; g.add(grv);
+    return g;
+  });
+  // neon strips on the chest (concept placement)
+  chestLine([[558, 392], [580, 372], [602, 352]], neonC, 0.0149);
+  chestLine([[525, 436], [545, 428], [562, 420]], neonC, 0.0087);
+  chestLine([[468, 503], [482, 484], [496, 466]], neonC, 0.0124);
+  chestLine([[590, 516], [612, 503], [640, 490]], neonC, 0.0149);
+  chestLine([[610, 412], [635, 414], [660, 424]], neonM, 0.0087);
+  chestLine([[526, 392], [530, 412]], neonM, 0.0074);
+  chestLine([[562, 578], [600, 568], [640, 528], [668, 508]], neonM, 0.0186);
+  chestLine([[664, 456], [670, 470], [676, 482]], neonM, 0.0087);
+  chestLine([[392, 438], [378, 452]], neonC, 0.0087);
+  chestLine([[404, 566], [424, 520], [440, 492]], neonM, 0.0124);
+  chestLine([[372, 410], [352, 428], [336, 452]], neonM, 0.0087);
+  // ZERO badge
+  const bC = document.createElement("canvas"); bC.width = 512; bC.height = 190; const bx = bC.getContext("2d");
+  bx.fillStyle = "#04080f"; bx.fillRect(0, 0, 512, 190);
+  { const gr = bx.createLinearGradient(0, 0, 512, 0); gr.addColorStop(0, "#22d6ff"); gr.addColorStop(.55, "#4fe0ff"); gr.addColorStop(.62, "#f53ad8"); gr.addColorStop(1, "#f53ad8");
+    const rr = (x, y, w, h, r) => { bx.beginPath(); bx.moveTo(x + r, y); bx.arcTo(x + w, y, x + w, y + h, r); bx.arcTo(x + w, y + h, x, y + h, r); bx.arcTo(x, y + h, x, y, r); bx.arcTo(x, y, x + w, y, r); bx.closePath(); };
+    bx.strokeStyle = gr; bx.lineWidth = 11; bx.shadowColor = "#22d6ff"; bx.shadowBlur = 18; rr(10, 10, 492, 170, 22); bx.stroke(); bx.lineWidth = 4; bx.shadowBlur = 0; bx.strokeStyle = "rgba(255,255,255,.55)"; rr(10, 10, 492, 170, 22); bx.stroke();
+    bx.font = "800 112px 'Exo 2','Arial Black',system-ui,sans-serif"; bx.textAlign = "center"; bx.textBaseline = "middle"; bx.fillStyle = "#e8fbff"; bx.shadowColor = "#22d6ff"; bx.shadowBlur = 26; bx.fillText("ZERO", 258, 100); }
+  const bT = new T.CanvasTexture(bC); bT.colorSpace = T.SRGBColorSpace; bT.anisotropy = 4;
+  { const c = W2(557, 479); const badge = new T.Mesh(new T.PlaneGeometry(0.8, 0.297), new T.MeshBasicMaterial({ map: bT, toneMapped: false })); const n = tN(c[0], c[1]); badge.position.copy(tP(c[0], c[1], 0.1)); badge.quaternion.setFromUnitVectors(zAxis, n); torsoG.add(badge); }
+  flushTubes();
 
   /* ---- tint (state) ---- */
-  const glowCol = new T.Color(CYAN);
-  Z.onState = () => { drawSkull(Z.expr); };
-  Z.onExpr = () => { drawSkull(Z.expr); };
-  drawSkull("neutral");
+  const glowCol = new T.Color(CYAN), magCol = new T.Color(MAG);
+  Z.onState = () => { drawSkullBase(); drawnLook = ""; };
+  Z.onExpr = () => {};
+  drawSkullBase();
   let lastStale = Z.stale;
 
-  /* ---- bloom (cheap: half-res) ---- */
+  /* ---- bloom ---- */
   let composer = null, bloom = null;
   if (EffectComposer) {
-    composer = new EffectComposer(renderer);
+    const rt = new T.WebGLRenderTarget(256, 256, { type: T.HalfFloatType, samples: 4 });
+    composer = new EffectComposer(renderer, rt);
     composer.addPass(new RenderPass(scene, camera));
-    bloom = new UnrealBloomPass(new T.Vector2(256, 256), 0.6, 0.5, 0.6);
+    bloom = new UnrealBloomPass(new T.Vector2(256, 256), 0.4, 0.4, 0.9);
     composer.addPass(bloom); composer.addPass(new OutputPass());
   }
   let useBloom = !!composer;
 
   /* ---- sizing ---- */
-  let W = 0, H = 0, baseDist = 8;
+  let W = 0, H = 0, baseDist = 8, lookY = -1.3, bgTimer = 0, lookOverride = null;
   function resize() {
     W = stage.clientWidth || window.innerWidth; H = stage.clientHeight || window.innerHeight;
     renderer.setPixelRatio(dpr); renderer.setSize(W, H, false);
     camera.aspect = W / H; camera.updateProjectionMatrix();
     if (composer) { composer.setPixelRatio(1); composer.setSize(Math.round(W * dpr), Math.round(H * dpr)); bloom.resolution.set(Math.round(W * dpr / 2), Math.round(H * dpr / 2)); }
-    const fitH = 4.2, fitW = 4.2;  // bust (helmet + shoulders) must fit
-    const vf = camera.fov * Math.PI / 180;
-    baseDist = Math.max(fitH / 2 / Math.tan(vf / 2), (fitW / 2) / (Math.tan(vf / 2) * camera.aspect));
+    const vf = camera.fov * Math.PI / 180, asp = camera.aspect;
+    const distW = (3.55 / 2) / (Math.tan(vf / 2) * asp), distH = (4.5 / 2) / Math.tan(vf / 2);
+    baseDist = Math.max(distW, distH);
+    lookY = (lookOverride !== null) ? lookOverride : -1.38 + clamp((asp - 0.5) / 0.8, 0, 1) * 0.62;
+    clearTimeout(bgTimer); bgTimer = setTimeout(buildBackground, bgTex ? 250 : 0); if (!bgTex) buildBackground();
   }
   window.addEventListener("resize", resize); window.addEventListener("orientationchange", () => setTimeout(resize, 250));
   resize();
 
-  /* ---- interaction: drag to spin, pinch / wheel to zoom ---- */
-  let yaw = 0.0, pitch = 0.05, yawV = 0, zoom = 1, lastInteract = -1e9;
+  /* ---- interaction: drag to spin, pinch / wheel to zoom, tap, poke ---- */
+  let yaw = 0.0, pitch = 0.0, yawV = 0, zoom = 1, lastInteract = -1e9, sway = 0, spinAcc = 0, lookX = 0, lookYv = 0;
   const ptrs = new Map(); let pinch0 = 0, zoom0 = 1, downT = 0, moved = 0, downX = 0, downY = 0;
   stage.addEventListener("pointerdown", (e) => {
     if (e.target.closest && e.target.closest("button,input,a")) return;
@@ -690,10 +942,11 @@ async function init3D() {
     lastInteract = performance.now();
   });
   stage.addEventListener("pointermove", (e) => {
+    lookX = (e.clientX / W - 0.5) * 2; lookYv = (e.clientY / H - 0.4) * 2;
     const p = ptrs.get(e.pointerId); if (!p) return;
     const dx = e.clientX - p.x, dy = e.clientY - p.y; p.x = e.clientX; p.y = e.clientY;
     if (ptrs.size >= 2) { const [a, b] = [...ptrs.values()]; const d = Math.hypot(a.x - b.x, a.y - b.y); if (pinch0 > 0) zoom = Math.min(2.2, Math.max(0.55, zoom0 * d / pinch0)); moved += 99; }
-    else { yaw += dx * 0.0085; pitch = Math.max(-0.5, Math.min(0.6, pitch + dy * 0.004)); yawV = dx * 0.0085 * 60; moved += Math.abs(dx) + Math.abs(dy); }
+    else { yaw += dx * 0.0085; spinAcc += Math.abs(dx) * 0.0085; pitch = Math.max(-0.5, Math.min(0.6, pitch + dy * 0.004)); yawV = dx * 0.0085 * 60; moved += Math.abs(dx) + Math.abs(dy); }
     lastInteract = performance.now();
   });
   const up = (e) => { const had = ptrs.delete(e.pointerId); if (had && ptrs.size === 0 && moved < 10 && performance.now() - downT < 450) onTap(); if (ptrs.size < 2) pinch0 = 0; lastInteract = performance.now(); };
@@ -705,75 +958,105 @@ async function init3D() {
   /* ---- loop ---- */
   const reduced = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
   let last = performance.now(), acc = 0, frames = 0, slow = 0, running = true, shown = false;
-  const tmpC = new T.Color();
+  let blinkAt = performance.now() + 2500, blinkT = -1, wasSleep = false, sleepAmt = 0, swayAmp = 0;
   function frame(ms) {
     if (!running) return;
     requestAnimationFrame(frame);
     let dt = Math.min(0.05, (ms - last) / 1000); last = ms;
     tickShared(ms, dt);
     const t = ms / 1000;
-    // adaptive quality
     acc += dt; frames++;
     if (acc > 2) { const fps = frames / acc; acc = 0; frames = 0;
       if (fps < 40) { slow++; if (slow >= 2) { if (useBloom) { useBloom = false; } else if (dpr > 1.1) { dpr = Math.max(1, dpr * 0.75); resize(); } slow = 0; } } else slow = 0; }
-    if (Z.stale !== lastStale) { lastStale = Z.stale; drawSkull(Z.expr); }
-    // state colour + visor pulse
-    const base = Z.stale ? PINK : CYAN;
-    glowCol.lerp(base, Math.min(1, dt * 4));
-    const pulse = 0.5 + 0.5 * Math.sin(t * 2.2);
-    const talk = Z.talk;
-    glowMat.color.copy(glowCol); glowMat.opacity = 0.025 + pulse * 0.03 + talk * 0.2;
-    visorMat.emissive.copy(glowCol); visorMat.emissiveIntensity = 0.015 + pulse * 0.03 + talk * 0.3;
-    { const k = 1.2 + talk * 1.0; neonC.color.setRGB(glowCol.r * k, glowCol.g * k, glowCol.b * k); }
-    cranMat.opacity = 0.85 + pulse * 0.15 + talk * 0.0; jawMat.opacity = cranMat.opacity;
-    cranMat.color.setScalar(1 + talk * 0.9 + pulse * 0.15); jawMat.color.copy(cranMat.color);
+    if (Z.stale !== lastStale) { lastStale = Z.stale; drawSkullBase(); drawnLook = ""; }
+    // ---- autonomous states: fx (laugh / annoyed / dizzy / surprised) and idle sleep
+    const nowMs = performance.now();
+    const fx = Z.fx && nowMs < Z.fx.until ? Z.fx.k : null; if (Z.fx && !fx) Z.fx = null;
+    Z.sleeping = !Z.speaking && !fx && nowMs - Z.lastAct > 45000;
+    sleepAmt += ((Z.sleeping ? 1 : 0) - sleepAmt) * Math.min(1, dt * 2.2);
+    if (Z.sleeping && !wasSleep) { try { if (synth) synth.cancel(); } catch (e) {} }
+    wasSleep = Z.sleeping;
+    const eff = fx || (Z.sleeping ? "sleepy" : Z.expr);
+    setLook(eff);
+    // spin dizziness: accumulated rotation (drag or fling) decays slowly
+    if (!ptrs.size) spinAcc += Math.abs(yawV) * dt; spinAcc *= Math.exp(-dt * 0.45);
+    if (spinAcc > 11 && !fx) { spinAcc = 0; Z.fx = { k: "dizzy", until: nowMs + 3400 }; speakText("Whoa… the room is spinning.", "dizzy"); setTimeout(() => { if (Z.expr === "dizzy") setExpr("neutral"); }, 3600); }
+    // state colour + glow
+    const base = Z.stale ? PINK : CYAN, baseM = Z.stale ? VIOL : MAG;
+    glowCol.lerp(base, Math.min(1, dt * 4)); magCol.lerp(baseM, Math.min(1, dt * 4));
+    const pulse = 0.5 + 0.5 * Math.sin(t * 2.2), talk = Z.talk, dim = 1 - 0.55 * sleepAmt;
+    rimUni.uRimC.value.copy(glowCol); rimUni.uRimM.value.copy(magCol);
+    glassMat.uniforms.uCyan.value.copy(glowCol); glassMat.uniforms.uMag.value.copy(magCol); glassMat.uniforms.uGlow.value = talk + pulse * 0.2;
+    { const k = (neonCbase + pulse * 0.15 + talk * 1.0) * dim; neonC.color.setRGB(glowCol.r * k, glowCol.g * k, glowCol.b * k);
+      const km = (neonMbase + pulse * 0.12 + talk * 0.8) * dim; neonM.color.setRGB(magCol.r * km, magCol.g * km, magCol.b * km); }
+    const sk = (0.9 + pulse * 0.12 + talk * 0.9) * dim;
+    cranMat.color.setScalar(sk); jawMat.color.copy(cranMat.color); eyeMat[0].color.setScalar(sk); eyeMat[1].color.setScalar(sk);
     // idle bob + breathing
-    const br = reduced ? 0 : 1;
-    body.position.y = Math.sin(t * 1.15) * 0.05 * br;
-    const breath = 1 + Math.sin(t * 1.9) * 0.012 * br;
-    chest.scale.set(breath, 1 + Math.sin(t * 1.9) * 0.02 * br, breath);
-    head.rotation.x = Math.sin(t * 0.8) * 0.025 * br + (Z.expr === "think" ? -0.07 : 0) + talk * 0.03;
-    head.rotation.z = (Z.expr === "think" ? 0.1 : Z.expr === "joke" ? -0.06 : 0) + Math.sin(t * 0.6) * 0.01 * br;
-    head.position.y = 1.05 + Math.sin(t * 1.15 + 0.6) * 0.02 * br;
-    // jaw sync
-    const jawOpen = talk * (0.55 + 0.45 * Math.sin(t * 22 + 1)) * 0.5 + (Z.expr === "happy" || Z.expr === "joke" ? 0.03 : 0);
-    jaw.position.y = JAW_Y0 - jawOpen * 0.16; cranium.position.y = 0.08 + jawOpen * 0.01;
-    // rings
-    hudBack.rotation.z = -t * 0.15; hudBack.material.opacity = 0.45 + talk * 0.4 + pulse * 0.08;
-    hudFlat.rotation.z = t * 0.5; hudFlat2.rotation.z = -t * 0.35; hudFlat.position.y = hudFlat2.position.y = 0.85 + Math.sin(t * 1.15) * 0.05;
-    hudFlat.material.opacity = 0.4 + talk * 0.4; hudFlat2.material.opacity = 0.45 + talk * 0.4;
-    stars.rotation.y = t * 0.004; stars.rotation.x = Math.sin(t * 0.05) * 0.03;
-    // rotation: slow auto-rotate unless the user is interacting; face front while speaking
+    const br = reduced ? 0 : 1, brs = 1 - 0.5 * sleepAmt;
+    body.position.y = Math.sin(t * 1.15 * brs) * 0.04 * br;
+    const breath = 1 + Math.sin(t * 1.9 * brs) * 0.008 * br;
+    torsoG.scale.set(breath, 1 + Math.sin(t * 1.9 * brs) * 0.012 * br, breath);
+    const laugh = fx === "laugh" ? 1 : 0, dizzy = fx === "dizzy" ? 1 : 0, annoyed = fx === "annoyed" || Z.expr === "annoyed" ? 1 : 0;
+    const tilt = eff === "focused" || eff === "think" ? -0.06 : eff === "worried" ? 0.05 : eff === "surprised" ? -0.05 : 0;
+    head.rotation.x = Math.sin(t * 0.8) * 0.02 * br + tilt + talk * 0.03 + laugh * (-0.1 * Math.abs(Math.sin(t * 15))) + sleepAmt * 0.2 + pitch * 0.45 + dizzy * Math.sin(t * 5.3) * 0.08;
+    head.rotation.z = (eff === "think" || eff === "focused" ? 0.08 : eff === "worried" ? -0.08 : eff === "joke" ? -0.06 : 0) + Math.sin(t * 0.6) * 0.008 * br + dizzy * Math.sin(t * 6.1) * 0.13 + sleepAmt * -0.07
+      + annoyed * Math.sin(t * 22) * (fx === "annoyed" ? 0.02 : 0);
+    head.rotation.y = (lookX * 0.12) * (1 - sleepAmt) * br + annoyed * Math.sin(t * 28) * 0.012;
+    head.position.y = Math.sin(t * 1.15 * brs + 0.6) * 0.02 * br - sleepAmt * 0.06 + laugh * Math.abs(Math.sin(t * 15)) * 0.03;
+    // jaw sync: speech + laughter
+    const jawOpen = talk * (0.55 + 0.45 * Math.sin(t * 22 + 1)) * 0.5 + (eff === "happy" || eff === "joke" ? 0.03 : 0) + laugh * (0.18 + 0.2 * Math.abs(Math.sin(t * 15))) + (eff === "surprised" ? 0.12 : 0) + sleepAmt * 0.05;
+    jaw.position.y = JAW_Y0 - jawOpen * 0.2; jaw.position.z = jawOpen * 0.03; cranium.position.y = jawOpen * 0.012;
+    // eyes: blink, dizzy spin, look-at
+    if (nowMs > blinkAt && blinkT < 0 && !Z.sleeping && eff !== "happy" && eff !== "laugh" && eff !== "dizzy") { blinkT = 0; blinkAt = nowMs + 2200 + rnd() * 4200; }
+    let bl = 1; if (blinkT >= 0) { blinkT += dt; bl = Math.abs(blinkT - 0.07) / 0.07; if (blinkT > 0.14) { blinkT = -1; bl = 1; } }
+    eyePiv.forEach((p, i) => { p.scale.set(1, Math.max(0.08, Math.min(1, bl)), 1); p.rotation.z = eff === "dizzy" ? t * (i ? -7 : 7) : 0; p.position.x += 0; });
+    // visor / frame pulse with speech
+    glass.scale.setScalar(1 + talk * 0.004);
+    // sleeping z
+    zSpr.material.opacity = Z.sleeping ? 0.5 + 0.5 * Math.sin(t * 1.6) : 0; zSpr.position.y = 0.9 + ((t * 0.35) % 1) * 0.5; zSpr.position.x = 1.1 + Math.sin(t * 1.6) * 0.08;
+    // rotation: drag / fling, then ease back to face front with a gentle sway (never spins by itself)
     const idle = performance.now() - lastInteract > 2500 && ptrs.size === 0;
     if (!ptrs.size) { yaw += yawV * dt; yawV *= Math.pow(0.04, dt); }
-    if (idle) {
-      if (Z.speaking || Z.talk > 0.05) { const f = Math.round(yaw / (Math.PI * 2)) * Math.PI * 2; yaw += (f - yaw) * Math.min(1, dt * 2.2); }
-      else if (!reduced) yaw += dt * 0.28;
-      pitch += (0.05 - pitch) * Math.min(1, dt * 1.5);
-    }
-    zero.rotation.y = yaw; zero.rotation.x = pitch * 0.6;
+    if (idle) { const f = Math.round(yaw / (Math.PI * 2)) * Math.PI * 2; yaw += (f - yaw) * Math.min(1, dt * (Z.speaking || Z.talk > 0.05 ? 2.2 : 0.9)); pitch += (0 - pitch) * Math.min(1, dt * 1.5); }
+    swayAmp += ((idle && !reduced ? 1 : 0) - swayAmp) * Math.min(1, dt * 1.2); sway = Math.sin(t * 0.42) * 0.3 * swayAmp * (Z.speaking ? 0.3 : 1);
+    zero.rotation.y = yaw + sway;
     const dist = baseDist * zoom;
-    camera.position.set(0, 0.55, dist); camera.lookAt(0, 0.45, 0);
-    camera.position.y = 0.55 + pitch * 0.5;
-    if (useBloom && composer) { bloom.strength = 0.38 + talk * 0.4; composer.render(dt); } else renderer.render(scene, camera);
+    camera.position.set(0, lookY + 0.35 + pitch * 0.4, dist); camera.lookAt(0, lookY, 0);
+    if (useBloom && composer) { bloom.strength = 0.36 + talk * 0.3; composer.render(dt); } else renderer.render(scene, camera);
     if (!shown) { shown = true; stage.classList.add("live"); Z.gl = true; }
   }
   document.addEventListener("visibilitychange", () => { if (document.hidden) running = false; else if (!running) { running = true; last = performance.now(); requestAnimationFrame(frame); } });
   canvas.addEventListener("webglcontextlost", (e) => { e.preventDefault(); running = false; stage.classList.remove("live"); Z.gl = false; });
   canvas.addEventListener("webglcontextrestored", () => { running = true; last = performance.now(); requestAnimationFrame(frame); });
   requestAnimationFrame(frame);
-  window.__zeroThree = { renderer, scene, camera, setYaw: (v) => { yaw = v; lastInteract = performance.now() + 1e7; }, setZoom: (z) => { zoom = z; } };
+  window.__zeroThree = { renderer, scene, camera, head, zero, setYaw: (v) => { yaw = v; sway = 0; swayAmp = 0; lastInteract = performance.now() + 1e7; }, setPitch: (v) => { pitch = v; }, setZoom: (z) => { zoom = z; }, setLookY: (v) => { lookOverride = v; lookY = v; }, setLook: (x, y) => { lookX = x; lookYv = y; }, setBloom: (v) => { useBloom = !!v && !!composer; } };
   return true;
 }
 
 /* ---------- boot ---------- */
-function onTap() { if (!greeted) greet(); }
+const tapTimes = [];
+function startFx(k, ms) { Z.fx = { k, until: performance.now() + ms }; }
+function poke() {
+  startFx("annoyed", 3200);
+  speakText(["Hey. The visor is not a button.", "Okay, okay. Stop poking the helmet.", "I felt that. Twice."][Math.floor(Math.random() * 3)], "annoyed");
+  setTimeout(() => { if (Z.expr === "annoyed") setExpr("neutral"); }, 3400);
+}
+function onTap() {
+  const now = performance.now(); tapTimes.push(now); while (tapTimes.length && now - tapTimes[0] > 2200) tapTimes.shift();
+  if (!greeted) { greet(); return; }                      // first tap wakes Zero with the voice greeting
+  if (tapTimes.length >= 3) { tapTimes.length = 0; poke(); return; }   // rapid pokes -> annoyed
+  startFx("laugh", 1700);                                  // single tap -> laugh
+}
+// idle sleep: any touch / key / typing counts as activity and wakes Zero
+const act = () => { if (Z.sleeping) startFx("surprised", 800); Z.lastAct = performance.now(); };
+["pointerdown", "keydown", "touchstart"].forEach((ev) => document.addEventListener(ev, act, { passive: true, capture: true }));
+$("q").addEventListener("input", () => { Z.lastAct = performance.now(); });
 // when 3D isn't running, a tap on the page still wakes Zero
 stage.addEventListener("click", () => { if (!Z.gl) onTap(); });
 $("wake").addEventListener("click", onTap);
 document.addEventListener("pointerup", (e) => { if (!greeted && e.target.closest && e.target.closest("#mic")) return; }, true);
 
-window.__zero = { Z, answer, handle, greetingText, summarize, loadData, applyData, greet, speakText, ageWords };
+window.__zero = { Z, answer, handle, greetingText, summarize, loadData, applyData, greet, speakText, ageWords, setExpr, startFx, poke, onTap };
 const rafShared = (() => { let last = performance.now(); return function loop(ms) { if (!Z.gl) { tickShared(ms, Math.min(0.05, (ms - last) / 1000)); } last = ms; requestAnimationFrame(loop); }; })();
 if (!(window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches) || true) requestAnimationFrame(rafShared);
 refresh();
