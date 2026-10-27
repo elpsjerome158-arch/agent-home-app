@@ -3,23 +3,13 @@
  "generated_at": "2026-10-23 08:26:00 CT",
  "insights": [
   {
-   "text": "All 12 weekend crypto setups rejected for ~1.9% spread plus downtrend (P-001–P-018)",
+   "text": "All 12 logged setups rejected for ~1.9% spread plus downtrend (P-001–P-018)",
    "source": "Trade Journal Bot",
    "priority": 1
   },
   {
    "text": "11 of 12 rejected setups have no decision score (P-002, P-003, P-004, P-005, P-006, P-007, P-009, P-011, P-015, P-016, P-018); scheduled cycles don't poll Setup Scout, so Devil's [file] Coach never review",
    "source": "Trade Journal Bot",
-   "priority": 1
-  },
-  {
-   "text": "NEEDS JEROME — STALE: no baseline RSI snapshot for the 2026-10-19 16:41 CT slot (checked 2026-10-20 08:50:34 CT); last valid result stays in use, labeled stale",
-   "source": "RSI tracker",
-   "priority": 1
-  },
-  {
-   "text": "NEEDS JEROME — STALE: no baseline RSI snapshot for the 2026-10-19 20:41 CT slot (checked 2026-10-20 08:50:34 CT); last valid result stays in use, labeled stale",
-   "source": "RSI tracker",
    "priority": 1
   },
   {

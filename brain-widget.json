@@ -1,0 +1,57 @@
+{
+ "schema": "brain-widget/1",
+ "built_ct": "Oct 23, 8:08 AM",
+ "neural": {
+  "nodes": 122,
+  "links": 46,
+  "agents": 11,
+  "memory": 86,
+  "kinds": {
+   "meme": 40,
+   "note": 22,
+   "xradar": 24
+  },
+  "newest_ts": 1792759680
+ },
+ "second_brain": {
+  "notes": 22,
+  "folders": 3,
+  "links": 46,
+  "topics": 14,
+  "routines": 4,
+  "attention": 5,
+  "rules": 9,
+  "newest_ts": 1792748787
+ },
+ "pipeline": {
+  "decisions": 100,
+  "events": 86,
+  "open": 3,
+  "decided": 1,
+  "gate": 0.25,
+  "median_gap_s": 10383,
+  "questions": 4,
+  "cases": [
+   {
+    "owner": "Robinhood Desk",
+    "route": "review"
+   },
+   {
+    "owner": "Meme Scout",
+    "route": "forward"
+   },
+   {
+    "owner": "Trade Journal Bot",
+    "route": "forward"
+   },
+   {
+    "owner": "Chief of Staff",
+    "route": "quarantine"
+   },
+   {
+    "owner": "Chief of Staff",
+    "route": "review"
+   }
+  ]
+ }
+}
