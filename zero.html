@@ -14,12 +14,6 @@
 <link rel="manifest" href="zero.webmanifest">
 <link rel="apple-touch-icon" href="zero-icon-180.png">
 <link rel="icon" type="image/png" href="zero-icon-192.png">
-<script type="importmap">
-{ "imports": {
-  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
-  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
-} }
-</script>
 <style>
 :root{--cyan:#BDB0F2;--pink:#6842CD;--mag:#8A6FE0;--bg:#07040d;--glow:var(--cyan);--sat:env(safe-area-inset-top,0px);--sab:env(safe-area-inset-bottom,0px)}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -29,10 +23,10 @@ html,body{margin:0;height:100%;background:var(--bg);color:#E9E6F4;overflow:hidde
 #gl{position:absolute;inset:0;width:100%;height:100%;display:block;opacity:0;transition:opacity .8s}
 #stage.live #gl{opacity:1}
 /* still-image fallback / poster */
-#still{position:absolute;left:50%;top:6%;width:min(100vw,66dvh);aspect-ratio:1;transform:translateX(-50%);transition:opacity .8s;pointer-events:none}
-#still img{width:100%;height:100%;display:block;object-fit:cover;border-radius:18px;animation:breathe 5s ease-in-out infinite;-webkit-mask-image:radial-gradient(closest-side,#000 78%,transparent 100%);mask-image:radial-gradient(closest-side,#000 78%,transparent 100%)}
+#still{position:absolute;inset:0;transition:opacity .8s;pointer-events:none}
+#still img{width:100%;height:100%;display:block;object-fit:cover;object-position:50% 50%}
 #stage.live #still{opacity:0}
-#eyeGlow{position:absolute;left:50%;top:27%;width:46%;height:16%;transform:translate(-50%,-50%);border-radius:50%;
+#eyeGlow{display:none;position:absolute;left:50%;top:27%;width:46%;height:16%;transform:translate(-50%,-50%);border-radius:50%;
   background:radial-gradient(closest-side,color-mix(in srgb,var(--glow) 55%,transparent),transparent 75%);mix-blend-mode:screen;opacity:.45;animation:pulse 2.6s ease-in-out infinite}
 #stage.talking #eyeGlow{animation:none;opacity:.85}
 @keyframes breathe{50%{transform:scale(1.02) translateY(-1%)}}
@@ -81,8 +75,8 @@ html,body{margin:0;height:100%;background:var(--bg);color:#E9E6F4;overflow:hidde
 </style>
 </head>
 <body>
-<div id="stage" aria-label="Zero, 3D avatar">
-  <div id="still"><img src="zero-avatar-sq.jpg" alt="Zero: a skull-headed figure in a black suit, violet light and glowing pale eyes" decoding="async"><div id="eyeGlow"></div></div>
+<div id="stage" aria-label="Zero, 2D avatar">
+  <div id="still"><img src="zero-2d.jpg" alt="Zero: a skull-headed figure in a black suit, violet light and glowing pale eyes" decoding="async"><div id="eyeGlow"></div></div>
   <canvas id="gl"></canvas>
 </div>
 <div id="vig"></div><div id="scan"></div>
@@ -109,7 +103,7 @@ html,body{margin:0;height:100%;background:var(--bg);color:#E9E6F4;overflow:hidde
     <button class="btn" id="send">Send</button>
     <button id="mic" aria-label="Hold to talk">🎙</button>
   </div>
-  <div id="hint">hold 🎙 to talk · or type · drag to spin · pinch to zoom</div>
+  <div id="hint">hold 🎙 to talk · or type · swipe fast = dizzy</div>
 </div>
 
 <script>
@@ -936,432 +930,170 @@ function tickShared(ms, dt) {
   if (!Z.gl) { const g = $("eyeGlow"); if (g) g.style.opacity = String(0.4 + Z.talk * 0.55); }
 }
 
-/* ---------- 3D (three.js from CDN; falls back to the still image) ---------- */
-/* Zero v2: bare skull head, slim tall figure in a black two-piece suit / black shirt / black tie, hands in pockets.
-   Palette is sampled from Jerome's reference image: near-black violet background, soft purple lightning, a thin violet rim light, pale violet-white eyes. No cyan / green / pink / bright neon. */
+/* ---------- 2D painted Zero (canvas layers over Jerome's reference art) ---------- */
+/* Base painting: zero-2d.jpg (720x1280, skull head on the reference pose). Layers drawn live on top:
+   flickering lightning (zero-2d-bolts.png, additive), glowing eyes per expression, a cut-out jaw that drops with speech.
+   Palette only from the reference: near-black violet, deep violet, purple lightning, pale violet-white. */
 Z.gl = false;
+const ART = { w: 720, h: 1280, eyes: [[305, 255], [375, 253]], socket: [19, 16], bite: 327, head: [340, 255] };
+const PAL = { eye: "#efeaff", eyeHalo: "#8b6cf0", mouth: "#07040d", bg: "#06030c" };
+const staleCol = { eye: "#d8d6ea", halo: "#7f7aa6" };
+const LOOK = { neutral: ["neutral", "neutral"], happy: ["happy", "happy"], laugh: ["laugh", "laugh"], joke: ["happy", "wink"], think: ["focused", "focused"], focused: ["focused", "focused"], alert: ["alert", "alert"], surprised: ["surprised", "surprised"], worried: ["worried", "worried"], annoyed: ["annoyed", "annoyed"], sleepy: ["sleepy", "sleepy"], dizzy: ["dizzy", "dizzy"] };
+function loadImg(src) { return new Promise((res, rej) => { const i = new Image(); i.decoding = "async"; i.onload = () => res(i); i.onerror = rej; i.src = src; }); }
+// one eye drawn into a 256x192 sprite (eye units: rx = 22, sprite scale 3.2)
+function drawEyeSprite(cv, kind, side, stale) {
+  const x = cv.getContext("2d"); x.setTransform(1, 0, 0, 1, 0, 0); x.clearRect(0, 0, cv.width, cv.height); x.setTransform(3.2, 0, 0, 3.2, 128, 96);
+  const A = stale ? staleCol.halo : PAL.eyeHalo, B = stale ? staleCol.eye : PAL.eye, rx = 22;
+  const almond = (ry, rot, lid) => { x.save(); x.rotate(rot || 0); x.beginPath(); x.moveTo(-rx, 0); x.quadraticCurveTo(0, -ry * 2, rx, 0); x.quadraticCurveTo(0, lid === undefined ? ry * 1.4 : lid, -rx, 0); x.closePath(); x.shadowColor = A; x.shadowBlur = 22; x.fillStyle = A; x.globalAlpha = 0.55; x.fill(); x.globalAlpha = 1; x.shadowBlur = 12; x.fillStyle = B; x.fill(); x.restore(); };
+  const arc = (w, dy, up) => { x.lineJoin = x.lineCap = "round"; x.shadowColor = A; x.shadowBlur = 20; x.strokeStyle = A; x.lineWidth = w + 3; x.beginPath(); x.moveTo(-rx, 6 + dy); x.quadraticCurveTo(0, up ? -18 + dy : 16 + dy, rx, 6 + dy); x.stroke(); x.shadowBlur = 8; x.strokeStyle = B; x.lineWidth = w; x.stroke(); };
+  switch (kind) {
+    case "happy": arc(4.2, 0, true); break;
+    case "laugh": arc(5, -2, true); arc(3, 7, true); break;
+    case "wink": arc(4.2, -8, false); break;
+    case "sleepy": x.globalAlpha = 0.75; arc(3.2, -4, false); x.globalAlpha = 1; break;
+    case "focused": case "think": almond(3.6, -side * 0.2, 4.5); break;
+    case "alert": almond(8.5, -side * 0.08); break;
+    case "surprised": x.beginPath(); x.arc(0, 0, 16, 0, 7); x.shadowColor = A; x.shadowBlur = 24; x.strokeStyle = A; x.lineWidth = 6; x.stroke(); x.shadowBlur = 10; x.strokeStyle = B; x.lineWidth = 2.6; x.stroke(); x.beginPath(); x.arc(0, 0, 6.5, 0, 7); x.fillStyle = B; x.fill(); break;
+    case "worried": almond(7.4, side * 0.3, 10); break;
+    case "annoyed": { x.beginPath(); x.moveTo(-rx, -3 - side * 3); x.lineTo(rx, -3 + side * 3); x.quadraticCurveTo(rx * 0.6, 12, 0, 12); x.quadraticCurveTo(-rx * 0.6, 12, -rx, -3 - side * 3); x.closePath(); x.shadowColor = A; x.shadowBlur = 22; x.fillStyle = A; x.globalAlpha = 0.55; x.fill(); x.globalAlpha = 1; x.shadowBlur = 10; x.fillStyle = B; x.fill(); break; }
+    case "dizzy": { x.lineJoin = x.lineCap = "round"; x.shadowColor = A; x.shadowBlur = 14; x.strokeStyle = B; x.lineWidth = 2.6; x.beginPath(); for (let t = 0; t < Math.PI * 5; t += 0.2) { const r = t * 1.4, px = Math.cos(t) * r, py = Math.sin(t) * r; t ? x.lineTo(px, py) : x.moveTo(px, py); } x.stroke(); break; }
+    default: almond(7.2, -side * 0.06, 8);
+  }
+}
+// paints one frame of Zero into ctx, in art space (caller sets the transform). st = { look, jaw, blink, glow, bolts, dizzyT, stale, sleep }
+function paintZero(ctx, img, bolts, eyeCv, st) {
+  ctx.drawImage(img, 0, 0, ART.w, ART.h);
+  // lightning flicker (additive)
+  if (bolts && st.bolts > 0.01) { ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = Math.min(1, st.bolts); ctx.drawImage(bolts, 0, 0, ART.w, ART.h); ctx.restore(); }
+  // jaw: dark mouth gap, then the lower jaw cut out and dropped by d px
+  const d = Math.max(0, st.jaw || 0);
+  if (d > 0.25) {
+    const B = ART.bite;
+    ctx.save(); ctx.fillStyle = PAL.mouth; ctx.beginPath(); ctx.moveTo(309, B - 3); ctx.quadraticCurveTo(345, B + 3, 386, B - 3); ctx.quadraticCurveTo(392, B + d * 0.5, 386, B + d + 2); ctx.quadraticCurveTo(345, B + d + 6, 309, B + d + 2); ctx.quadraticCurveTo(303, B + d * 0.5, 309, B - 3); ctx.closePath(); ctx.fill(); ctx.restore();
+    ctx.save(); ctx.translate(0, d); ctx.beginPath();
+    ctx.moveTo(306, B - 1); ctx.quadraticCurveTo(345, B + 4, 390, B - 1); ctx.lineTo(399, 336); ctx.lineTo(401, 342); ctx.lineTo(396, 353); ctx.quadraticCurveTo(385, 366, 372, 370); ctx.quadraticCurveTo(345, 378, 320, 369); ctx.lineTo(303, 350); ctx.closePath(); ctx.clip();
+    ctx.drawImage(img, 0, -d, ART.w, ART.h, 0, -d, ART.w, ART.h); ctx.drawImage(img, 0, 0, ART.w, ART.h);
+    ctx.restore();
+    // shading under the upper teeth
+  }
+  // sockets: darken the painted glints, then glow halo + eye sprite
+  const [sx, sy] = ART.socket;
+  ART.eyes.forEach(([ex, ey], i) => {
+    ctx.save(); ctx.translate(ex, ey); ctx.scale(1, sy / sx); const rg = ctx.createRadialGradient(0, 0, 0, 0, 0, sx); rg.addColorStop(0, "rgba(5,3,10,.96)"); rg.addColorStop(0.7, "rgba(5,3,10,.85)"); rg.addColorStop(1, "rgba(5,3,10,0)"); ctx.fillStyle = rg; ctx.beginPath(); ctx.arc(0, 0, sx, 0, 7); ctx.fill(); ctx.restore();
+    ctx.save(); ctx.globalCompositeOperation = "lighter";
+    const hal = ctx.createRadialGradient(ex, ey, 0, ex, ey, sx * 1.5); const hc = st.stale ? "127,122,166" : "139,108,240";
+    hal.addColorStop(0, "rgba(" + hc + "," + (0.38 * st.glow).toFixed(3) + ")"); hal.addColorStop(1, "rgba(" + hc + ",0)"); ctx.fillStyle = hal; ctx.fillRect(ex - sx * 1.6, ey - sx * 1.6, sx * 3.2, sx * 3.2);
+    ctx.globalAlpha = Math.min(1, 0.55 + 0.45 * st.glow);
+    ctx.translate(ex, ey + 1); if (st.look === "dizzy") ctx.rotate((st.dizzyT || 0) * (i ? -7 : 7));
+    ctx.scale(0.27, 0.27 * Math.max(0.08, Math.min(1, st.blink == null ? 1 : st.blink)));
+    ctx.drawImage(eyeCv[i], -128, -96); ctx.restore();
+  });
+}
 async function init3D() {
-  const canvas = $("gl");
-  let THREE;
-  try {
-    const probe = document.createElement("canvas");
-    if (!(probe.getContext("webgl2") || probe.getContext("webgl"))) throw new Error("no webgl");
-    THREE = await Promise.race([import("three"), new Promise((_, rej) => setTimeout(() => rej(new Error("three timeout")), 9000))]);
-  } catch (e) { console.warn("3D unavailable, using still image:", e && e.message); return false; }
-  let EffectComposer, RenderPass, UnrealBloomPass, OutputPass, mergeGeometries = null, mergeVertices = null;
-  try {
-    [{ EffectComposer }, { RenderPass }, { UnrealBloomPass }, { OutputPass }] = await Promise.all([
-      import("three/addons/postprocessing/EffectComposer.js"), import("three/addons/postprocessing/RenderPass.js"),
-      import("three/addons/postprocessing/UnrealBloomPass.js"), import("three/addons/postprocessing/OutputPass.js")]);
-  } catch (e) { console.warn("bloom unavailable:", e && e.message); }
-  try { ({ mergeGeometries, mergeVertices } = await import("three/addons/utils/BufferGeometryUtils.js")); } catch (e) {}
-
-  const T = THREE;
-  const renderer = new T.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: "high-performance" });
-  let dpr = Math.min(window.devicePixelRatio || 1, 2);
-  renderer.setPixelRatio(dpr);
-  renderer.setClearColor(0x07040d, 1);
-  renderer.toneMapping = T.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.0;
-  renderer.outputColorSpace = T.SRGBColorSpace;
-  const scene = new T.Scene();
-  const camera = new T.PerspectiveCamera(32, 1, 0.1, 120);
-  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
-  const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
-  let seed = 1234567; const rnd = () => { seed |= 0; seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
-  const V = (x, y, z) => new T.Vector3(x, y, z);
-
-  /* ---------- palette (sampled from the reference photo) ---------- */
-  const PAL = {
-    bg: "#07040d", bgMid: "#0d0920", bgGlow: "#1a1040", bolt: "#6842cd", boltHi: "#8b6cf0", deep: "#3e2aa3", rim: "#7a5cf0", rimHi: "#b9a8ff",
-    eye: "#efeaff", eyeHalo: "#8b6cf0", suit: 0x100e1f, shirt: 0x211f45, tie: 0x0c0b1a, bone: [0.86, 0.84, 0.88]
-  };
-  const staleCol = { eye: "#d8d6ea", halo: "#7f7aa6", bolt: "#4a4668" };
-
-  /* ---------- environment: near-black violet studio with soft violet strips (reflections only) ---------- */
-  {
-    const c = document.createElement("canvas"); c.width = 1024; c.height = 512; const x = c.getContext("2d");
-    x.fillStyle = "#050310"; x.fillRect(0, 0, 1024, 512);
-    const soft = (cx, cy, rx, ry, col, a) => { x.save(); x.translate(cx, cy); x.scale(rx, ry); const rg = x.createRadialGradient(0, 0, 0, 0, 0, 1); rg.addColorStop(0, col.replace("A", a)); rg.addColorStop(.55, col.replace("A", a * .45)); rg.addColorStop(1, col.replace("A", 0)); x.fillStyle = rg; x.fillRect(-1, -1, 2, 2); x.restore(); };
-    soft(250, 250, 110, 170, "rgba(110,80,240,A)", .8);    // back-left strip
-    soft(790, 250, 110, 170, "rgba(110,80,240,A)", .8);    // back-right strip
-    soft(512, 60, 200, 40, "rgba(150,130,255,A)", .55);    // top soft box
-    soft(0, 250, 90, 170, "rgba(90,60,220,A)", .6); soft(1024, 250, 90, 170, "rgba(90,60,220,A)", .6);
-    soft(512, 300, 180, 120, "rgba(40,24,110,A)", .5);
-    const tex = new T.CanvasTexture(c); tex.mapping = T.EquirectangularReflectionMapping; tex.colorSpace = T.SRGBColorSpace;
-    const pm = new T.PMREMGenerator(renderer); scene.environment = pm.fromEquirectangular(tex).texture; tex.dispose(); pm.dispose();
+  const canvas = $("gl"), ctx = canvas.getContext("2d");
+  let img, bolts = null;
+  try { img = await loadImg("zero-2d.jpg"); } catch (e) { console.warn("2D art unavailable, using still image"); return false; }
+  try { bolts = await loadImg("zero-2d-bolts.png"); } catch (e) {}
+  const eyeCv = [0, 1].map(() => { const c = document.createElement("canvas"); c.width = 256; c.height = 192; return c; });
+  let drawnLook = "", drawnStale = null;
+  function setLook(k) { if (k === drawnLook && drawnStale === Z.stale) return; drawnLook = k; drawnStale = Z.stale; const L = LOOK[k] || LOOK.neutral; drawEyeSprite(eyeCv[0], L[0], -1, Z.stale); drawEyeSprite(eyeCv[1], L[1], 1, Z.stale); }
+  const stage = $("stage");
+  let W = 0, H = 0, dpr = Math.min(window.devicePixelRatio || 1, 2), zoom = 1;
+  function resize() { W = stage.clientWidth || innerWidth; H = stage.clientHeight || innerHeight; canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr); }
+  addEventListener("resize", resize); addEventListener("orientationchange", () => setTimeout(resize, 250)); resize();
+  function layout() { // art -> css px
+    const land = W > H * 0.8;
+    let s = land ? H / (ART.h * 0.66) : Math.max(W / ART.w, H / ART.h);
+    s *= zoom; const ox = W / 2 - ART.head[0] * s - (land ? 0 : (360 - ART.head[0]) * s);
+    const oy = land ? H * 0.42 - ART.head[1] * s * 1.0 - 60 * s : (H - ART.h * s) / 2 + (zoom - 1) * -ART.head[1] * s * 0.6;
+    return { s, ox: land ? W / 2 - 350 * s : ox, oy };
   }
-  scene.environmentIntensity = 0.55;
-  scene.add(new T.AmbientLight(0x2a2548, 1.0));
-  const key = new T.DirectionalLight(0xe4e0ff, 1.35); key.position.set(0.8, 3.0, 5.0); scene.add(key);          // faint front/top fill so the face reads
-  const rimL = new T.DirectionalLight(0x6a4be0, 2.6); rimL.position.set(-5, 1.5, -3.5); scene.add(rimL);        // purple rim, left back
-  const rimR = new T.DirectionalLight(0x7a5cf0, 2.6); rimR.position.set(5, 1.0, -3.5); scene.add(rimR);         // purple rim, right back
-  const rimT = new T.DirectionalLight(0x8b6cf0, 1.2); rimT.position.set(0, 4, -4); scene.add(rimT);
-  const eyeL = [0, 1].map(() => { const l = new T.PointLight(0x8b6cf0, 0.5, 2.6, 2); scene.add(l); return l; });   // eyes light the brow/cheeks
-
-  /* ---------- rim shader: thin violet edge on every lit surface ---------- */
-  const rimUni = { uRimC: { value: new T.Color(PAL.rim) }, uRimM: { value: new T.Color(PAL.rimHi) } };
-  function addRim(mat, k, pw) {
-    mat.onBeforeCompile = (sh) => {
-      sh.uniforms.uRimC = rimUni.uRimC; sh.uniforms.uRimM = rimUni.uRimM; sh.uniforms.uRimK = { value: k }; sh.uniforms.uRimP = { value: pw || 4.5 };
-      sh.fragmentShader = "uniform vec3 uRimC; uniform vec3 uRimM; uniform float uRimK; uniform float uRimP;\n" + sh.fragmentShader.replace("#include <opaque_fragment>",
-        "{ vec3 rn = normalize(vNormal); float rf = pow(1.0 - clamp(dot(rn, normalize(vViewPosition)), 0.0, 1.0), uRimP); vec3 rc = mix(uRimC, uRimM, smoothstep(0.1, 0.9, abs(rn.y))); outgoingLight += rc * rf * uRimK; }\n#include <opaque_fragment>");
-    };
-    mat.customProgramCacheKey = () => "rim" + k + "_" + (pw || 4.5);
-  }
-  const mkGeo = (pos, uv, idx) => { const g = new T.BufferGeometry(); g.setAttribute("position", new T.Float32BufferAttribute(pos, 3)); g.setAttribute("uv", new T.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals(); return g; };
-
-  /* ---------- background: near-black violet + soft aura glow + faint dust; lightning is redrawn on top ~12x/s ---------- */
-  let bgTex = null, bgCanvas = null, bgBase = null;
-  const hash = (x, y) => { let h = (x * 374761393 + y * 668265263) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
-  function buildBackground() {
-    const aspect = W / H, w = clamp(Math.round(W * 0.8), 300, 720), h = Math.round(w / aspect);
-    bgBase = document.createElement("canvas"); bgBase.width = w; bgBase.height = h; const x = bgBase.getContext("2d");
-    x.fillStyle = PAL.bg; x.fillRect(0, 0, w, h);
-    const g = x.createRadialGradient(w / 2, h * 0.42, 0, w / 2, h * 0.42, Math.max(w, h * 0.7));
-    g.addColorStop(0, "rgba(40,24,100,.55)"); g.addColorStop(0.35, "rgba(20,12,56,.5)"); g.addColorStop(1, "rgba(5,3,12,0)"); x.fillStyle = g; x.fillRect(0, 0, w, h);
-    const g2 = x.createLinearGradient(0, 0, 0, h); g2.addColorStop(0, "rgba(2,1,6,.55)"); g2.addColorStop(0.5, "rgba(0,0,0,0)"); g2.addColorStop(1, "rgba(2,1,6,.7)"); x.fillStyle = g2; x.fillRect(0, 0, w, h);
-    const n = Math.round(w * h / 2600);
-    for (let i = 0; i < n; i++) { const sx = rnd() * w, sy = rnd() * h, k = rnd(); x.fillStyle = `rgba(${k < .75 ? "200,190,255" : "140,120,230"},${0.08 + rnd() * 0.3})`; x.fillRect(sx, sy, k > 0.97 ? 1.6 : 1, k > 0.97 ? 1.6 : 1); }
-    if (!bgCanvas) { bgCanvas = document.createElement("canvas"); }
-    bgCanvas.width = w; bgCanvas.height = h;
-    if (bgTex) bgTex.dispose();
-    bgTex = new T.CanvasTexture(bgCanvas); bgTex.colorSpace = T.SRGBColorSpace; bgTex.minFilter = T.LinearFilter; bgTex.generateMipmaps = false; scene.background = bgTex;
-    drawLightning(0, 0.5, true);
-  }
-  /* lightning: midpoint-displaced bolts hugging the silhouette, purple only */
-  const SIL = [[1.3, 1.1], [0.2, 1.05], [-1.0, 0.7], [-1.9, 1.9], [-3.2, 2.35], [-5.0, 2.45], [-6.5, 2.1], [-8.0, 1.7], [-12, 1.5]];
-  const silW = (y) => { for (let i = 0; i < SIL.length - 1; i++) { const a = SIL[i], b = SIL[i + 1]; if (y <= a[0] && y >= b[0]) { const t = (a[0] - y) / (a[0] - b[0]); return a[1] + (b[1] - a[1]) * t; } } return SIL[SIL.length - 1][1]; };
-  const bolts = [];
-  function mkBolt(side, y0, y1, off, life) { return { side, y0, y1, off, life, born: 0, seed: Math.floor(rnd() * 1e6), branches: rnd() < 0.6 ? 2 : 1 }; }
-  function resetBolts() { bolts.length = 0; for (const s of [-1, 1]) for (let i = 0; i < 5; i++) bolts.push(mkBolt(s, 1.4 - i * 2.2 - rnd() * 1.2, -1.0 - i * 2.2 - rnd() * 2.4, 0.1 + rnd() * 0.6, 0.35 + rnd() * 1.4)); }
-  resetBolts();
-  const toScr = (x, y, w, h) => { const v = V(x, y, 0).project(camera); return [(v.x * 0.5 + 0.5) * w, (-v.y * 0.5 + 0.5) * h]; };
-  function boltPath(pts, ax, ay, bx, by, depth, jag, r) {
-    if (depth === 0) { pts.push([bx, by]); return; }
-    const mx = (ax + bx) / 2 + (r() - 0.5) * jag, my = (ay + by) / 2 + (r() - 0.5) * jag * 0.35;
-    boltPath(pts, ax, ay, mx, my, depth - 1, jag * 0.52, r); boltPath(pts, mx, my, bx, by, depth - 1, jag * 0.52, r);
-  }
-  const lcg = (s) => () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
-  let lastBolt = 0, boltEnergy = 1;
-  function drawLightning(ms, talk, force) {
-    if (!bgBase || !bgCanvas) return;
-    const w = bgCanvas.width, h = bgCanvas.height, x = bgCanvas.getContext("2d"); camera.updateMatrixWorld(); camera.updateProjectionMatrix();
-    x.globalCompositeOperation = "source-over"; x.globalAlpha = 1; x.shadowBlur = 0; x.drawImage(bgBase, 0, 0);
-    const stale = Z.stale, k = (stale ? 0.4 : 1) * (1 - 0.6 * sleepAmt) * (0.8 + 0.5 * talk + 0.2 * Math.sin(ms * 0.003));
-    // soft aura hugging the body
-    const [cx, cy] = toScr(0, -3.4, w, h), [ex] = toScr(2.9, -3.4, w, h);
-    const ag = x.createRadialGradient(cx, cy, 0, cx, cy, (ex - cx) * 1.45); ag.addColorStop(0, "rgba(70,40,170,0)"); ag.addColorStop(0.55, `rgba(70,44,175,${0.17 * k})`); ag.addColorStop(1, "rgba(40,20,110,0)");
-    x.globalCompositeOperation = "lighter"; x.fillStyle = ag; x.fillRect(0, 0, w, h);
-    const bcol = stale ? staleCol.bolt : PAL.bolt;
-    for (const b of bolts) {
-      const age = ms / 1000 - b.born; if (age > b.life) { b.born = ms / 1000 + rnd() * 0.25; b.life = 0.25 + rnd() * 1.1; b.seed = Math.floor(rnd() * 1e6); b.off = 0.05 + rnd() * 0.7; const top = 1.6 - rnd() * 8; b.y0 = top; b.y1 = top - 1.8 - rnd() * 3.4; b.branches = rnd() < 0.6 ? 2 : 1; continue; }
-      if (age < 0) continue;
-      const fl = (0.55 + 0.45 * Math.sin(age * 38 + b.seed)) * Math.min(1, age * 14) * Math.min(1, (b.life - age) * 5) * k;
-      if (fl <= 0.02) continue;
-      const r = lcg(b.seed + Math.floor(age * 9));      // jitter changes ~9x/s
-      const xs = b.y0, xe = b.y1, wy0 = silW(b.y0) + b.off, wy1 = silW(b.y1) + b.off * 0.7;
-      const [ax, ay] = toScr(b.side * wy0, b.y0, w, h), [bx, by] = toScr(b.side * wy1, b.y1, w, h);
-      const pts = [[ax, ay]]; boltPath(pts, ax, ay, bx, by, 5, h * 0.05, r);
-      const draw = (lw, col, blur, a) => { x.lineWidth = lw; x.strokeStyle = col; x.shadowColor = bcol; x.shadowBlur = blur; x.globalAlpha = a; x.lineJoin = x.lineCap = "round"; x.beginPath(); pts.forEach((p, i) => (i ? x.lineTo(p[0], p[1]) : x.moveTo(p[0], p[1]))); x.stroke(); };
-      const sc = h / 844 * 1.15;
-      draw(10 * sc, bcol, 22 * sc, 0.28 * fl); draw(4.2 * sc, stale ? "#6e6a92" : PAL.boltHi, 12 * sc, 0.75 * fl); draw(1.7 * sc, stale ? "#d8d6ea" : "#c2b2f2", 5 * sc, 0.8 * fl);
-      for (let q = 0; q < b.branches; q++) {
-        const i0 = 3 + Math.floor(r() * (pts.length - 6)); if (!pts[i0]) continue; const p0 = pts[i0], dir = b.side * (0.5 + r() * 0.9), len = h * (0.04 + r() * 0.07);
-        const bp = [p0]; boltPath(bp, p0[0], p0[1], p0[0] + dir * len, p0[1] + len * (0.3 + r() * 0.8), 3, len * 0.5, r);
-        x.lineWidth = 1.4 * sc; x.strokeStyle = stale ? "#8b87b0" : "#b9a8ff"; x.shadowColor = bcol; x.shadowBlur = 8 * sc; x.globalAlpha = 0.7 * fl; x.beginPath(); bp.forEach((p, i) => (i ? x.lineTo(p[0], p[1]) : x.moveTo(p[0], p[1]))); x.stroke();
-      }
-    }
-    x.globalAlpha = 1; x.shadowBlur = 0; x.globalCompositeOperation = "source-over";
-    bgTex.needsUpdate = true;
-  }
-
-  /* ---------- Zero ---------- */
-  const zero = new T.Group(); scene.add(zero);
-  const body = new T.Group(); zero.add(body);                  // breathing / bob target
-  const head = new T.Group(); body.add(head);                  // origin = cranium centre
-  const torsoG = new T.Group(); body.add(torsoG);
-
-  const jacketMat = new T.MeshPhysicalMaterial({ color: PAL.suit, metalness: 0.0, roughness: 0.62, sheen: 1.0, sheenRoughness: 0.5, sheenColor: new T.Color(0x4a3aa8), clearcoat: 0.18, clearcoatRoughness: 0.5, envMapIntensity: 1.0 });
-  addRim(jacketMat, 0.85, 5);
-  const shirtMat = new T.MeshPhysicalMaterial({ color: PAL.shirt, metalness: 0, roughness: 0.55, sheen: 0.8, sheenColor: new T.Color(0x3b2f8a), envMapIntensity: 0.8 }); addRim(shirtMat, 0.6, 5);
-  const tieMat = new T.MeshPhysicalMaterial({ color: 0x050409, metalness: 0.0, roughness: 0.55, sheen: 0.5, sheenColor: new T.Color(0x3a2e8a), envMapIntensity: 0.5 }); addRim(tieMat, 0.6, 5);
-  const darkMat = new T.MeshStandardMaterial({ color: 0x030208, metalness: 0.1, roughness: 0.7 }); addRim(darkMat, 0.5, 5);
-  const boneMat = new T.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, metalness: 0.0, roughness: 0.55, envMapIntensity: 0.7 }); addRim(boneMat, 0.4, 5);
-  const toothMat = new T.MeshStandardMaterial({ color: 0xd4d0de, metalness: 0.0, roughness: 0.45, envMapIntensity: 0.7 }); addRim(toothMat, 0.4, 5);
-  const spineMat = new T.MeshStandardMaterial({ color: 0x7a768c, metalness: 0.0, roughness: 0.6 }); addRim(spineMat, 0.4, 5);
-
-  /* ---------- skull ---------- */
-  const CC = { x: 0.88, y: 0.94, z: 1.0, cy: 0.2 };          // cranium radii + centre
-  const SOCK = { x: 0.38, y: 0.02, rx: 0.27, ry: 0.235 }, NOSE = { y: -0.36, rx: 0.115, ry: 0.17 };
-  // base skull shape: cranium sphere whose lower half is drawn out into a narrower face (maxilla)
-  const lerpK = (K, y) => { if (y >= K[0][0]) return K[0][1]; for (let i = 0; i < K.length - 1; i++) { if (y <= K[i][0] && y >= K[i + 1][0]) { const t = (K[i][0] - y) / (K[i][0] - K[i + 1][0]); const e = t * t * (3 - 2 * t); return K[i][1] + (K[i + 1][1] - K[i][1]) * e; } } return K[K.length - 1][1]; };
-  const FRX = [[-0.12, 0.84], [-0.4, 0.74], [-0.65, 0.52], [-0.9, 0.42], [-1.1, 0.4]], FRZ = [[-0.12, 0.98], [-0.4, 0.88], [-0.65, 0.8], [-0.9, 0.74], [-1.1, 0.7]], FZC = [[-0.12, 0.0], [-0.65, 0.07], [-1.1, 0.11]];
-  const skullPos = (dx, dy, dz) => {
-    let x = dx * CC.x, y = dy * CC.y + CC.cy, z = dz * CC.z;
-    if (y < -0.12) {
-      const t = clamp((-0.12 - y) / 0.86, 0, 1), yn = -0.12 - t * 1.0, h = Math.hypot(dx, dz) || 1, ux = dx / h, uz = dz / h;
-      const close = Math.sqrt(Math.max(0, 1 - Math.pow(t, 7))); y = yn;
-      x = ux * lerpK(FRX, yn) * close; z = lerpK(FZC, yn) * close + uz * lerpK(FRZ, yn) * close;
-    }
-    return [x, y, z];
-  };
-  const skullGeo = (() => {
-    let g = new T.SphereGeometry(1, 176, 128); g.deleteAttribute("uv"); g.deleteAttribute("normal");
-    if (mergeVertices) g = mergeVertices(g, 1e-4);
-    const pa = g.attributes.position, n = pa.count, col = new Float32Array(n * 3);
-    for (let i = 0; i < n; i++) {
-      let [x, y, z] = skullPos(pa.getX(i), pa.getY(i), pa.getZ(i)), black = 0;
-      const front = smooth(0.05, 0.45, z);
-      for (const s of [-1, 1]) {
-        const rn = Math.hypot((x - s * SOCK.x) / SOCK.rx, (y - SOCK.y) / SOCK.ry);
-        z -= 0.4 * (1 - smooth(0.7, 1.12, rn)) * front; black = Math.max(black, 1 - smooth(0.9, 1.08, rn));
-        const rc = Math.hypot((x - s * 0.5) / 0.22, (y + 0.36) / 0.16); z += 0.07 * (1 - smooth(0.2, 1, rc)) * front;               // cheekbone
-        const rb = Math.hypot((x - s * 0.36) / 0.36, (y - 0.3) / 0.09); z += 0.06 * (1 - smooth(0.2, 1, rb)) * front;               // brow ridge
-      }
-      const nr = Math.hypot(x / (NOSE.rx * (0.7 + 0.5 * smooth(-0.9, 0.9, -(y - NOSE.y) / NOSE.ry))), (y - NOSE.y) / NOSE.ry);       // inverted-heart nasal cavity
-      z -= 0.3 * (1 - smooth(0.5, 1.2, nr)) * front; black = Math.max(black, 1 - smooth(0.82, 1.05, nr));
-      pa.setXYZ(i, x, y, z);
-      const v = 0.96 + 0.08 * hash(Math.round(x * 40), Math.round(y * 40)), shade = 0.62 + 0.38 * smooth(-1.0, 0.8, y);
-      const bk = 1 - black * 0.97;
-      col[i * 3] = PAL.bone[0] * v * bk * shade; col[i * 3 + 1] = PAL.bone[1] * v * bk * shade; col[i * 3 + 2] = PAL.bone[2] * v * bk * shade;
-    }
-    g.setAttribute("color", new T.BufferAttribute(col, 3)); g.computeVertexNormals(); return g;
-  })();
-  const cranium = new T.Mesh(skullGeo, boneMat); head.add(cranium);
-  const bone = (mesh, c) => { const g = mesh.geometry; const n = g.attributes.position.count, a = new Float32Array(n * 3); for (let i = 0; i < n; i++) { const y = g.attributes.position.getY(i) + mesh.position.y; const sh = 0.62 + 0.38 * smooth(-1.2, 0.5, y); a[i * 3] = c[0] * sh; a[i * 3 + 1] = c[1] * sh; a[i * 3 + 2] = c[2] * sh; } g.setAttribute("color", new T.BufferAttribute(a, 3)); return mesh; };
-  // upper teeth sit on the rim of the drawn-out maxilla
-  const YT = -0.9;
-  const ring = { rx: lerpK(FRX, YT) * 0.97, rz: lerpK(FRZ, YT) * 0.97, cz: lerpK(FZC, YT), y: YT };
-  const teeth = (parent, y, rx, rz, cz, n, h, dy0) => { for (let i = 0; i < n; i++) { const a = (i / (n - 1) - 0.5) * 2 * 1.0; const m = new T.Mesh(new T.CapsuleGeometry(rx * 0.115, h * 0.7, 3, 8), toothMat); m.position.set(Math.sin(a) * rx, y, cz + Math.cos(a) * rz); m.rotation.y = a * 0.9; parent.add(m); } };
-  teeth(head, YT - 0.02, ring.rx, ring.rz, ring.cz, 8, 0.15);
-  // jaw (mandible): pivots at the ear hinge
-  const PIV = V(0, -0.5, -0.06);
-  const jawG = new T.Group(); jawG.position.copy(PIV); head.add(jawG);
-  const jw = (x, y, z) => V(x - PIV.x, y - PIV.y, z - PIV.z);
-  {
-    const half = (s) => [[0.68, -0.5, -0.06], [0.64, -0.78, 0.02], [0.54, -1.0, 0.24], [0.34, -1.12, 0.54], [0.12, -1.16, 0.7]].map((p) => jw(s * p[0], p[1], p[2]));
-    const pts = half(-1).concat(half(1).reverse());
-    const jt = new T.Mesh(new T.TubeGeometry(new T.CatmullRomCurve3(pts), 90, 0.1, 12, false), boneMat); bone(jt, PAL.bone); jawG.add(jt);
-    const chin = new T.Mesh(new T.SphereGeometry(1, 28, 20).scale(0.24, 0.13, 0.14), boneMat); chin.position.copy(jw(0, -1.13, 0.68)); bone(chin, PAL.bone); jawG.add(chin);
-    teeth(jawG, YT - 0.13 - PIV.y, ring.rx * 0.96, ring.rz * 0.94, ring.cz - PIV.z, 8, 0.14);
-  }
-  // sockets: eye glow planes
-  const eyeC = [0, 1].map(() => { const c = document.createElement("canvas"); c.width = 256; c.height = 192; return c; });
-  const eyeT = eyeC.map((c) => { const t = new T.CanvasTexture(c); t.colorSpace = T.SRGBColorSpace; return t; });
-  const addMat = (map) => new T.MeshBasicMaterial({ map, transparent: true, depthWrite: false, blending: T.AdditiveBlending, toneMapped: false, color: 0xffffff });
-  const eyeMat = [addMat(eyeT[0]), addMat(eyeT[1])];
-  const eyePiv = [-1, 1].map((s, i) => { const p = new T.Group(); p.position.set(s * SOCK.x, SOCK.y, 0.58); head.add(p); const m = new T.Mesh(new T.PlaneGeometry(0.64, 0.48), eyeMat[i]); m.renderOrder = 4; p.add(m); return p; });
-  function drawEye(i, kind, side) {
-    const cv = eyeC[i], x = cv.getContext("2d"); x.setTransform(1, 0, 0, 1, 0, 0); x.clearRect(0, 0, cv.width, cv.height); x.setTransform(3.2, 0, 0, 3.2, 128, 96);
-    const stale = Z.stale, A = stale ? staleCol.halo : PAL.eyeHalo, B = stale ? staleCol.eye : PAL.eye;
-    const rx = 22;
-    const almond = (ry, rot, lid) => { x.save(); x.rotate(rot || 0); x.beginPath(); x.moveTo(-rx, 0); x.quadraticCurveTo(0, -ry * 2, rx, 0); x.quadraticCurveTo(0, lid === undefined ? ry * 1.4 : lid, -rx, 0); x.closePath(); x.shadowColor = A; x.shadowBlur = 22; x.fillStyle = A; x.globalAlpha = 0.55; x.fill(); x.globalAlpha = 1; x.shadowBlur = 12; x.fillStyle = B; x.fill(); x.restore(); };
-    const arc = (w, dy, up) => { x.lineJoin = x.lineCap = "round"; x.shadowColor = A; x.shadowBlur = 20; x.strokeStyle = A; x.lineWidth = w + 3; x.beginPath(); x.moveTo(-rx, 6 + dy); x.quadraticCurveTo(0, up ? -18 + dy : 16 + dy, rx, 6 + dy); x.stroke(); x.shadowBlur = 8; x.strokeStyle = B; x.lineWidth = w; x.stroke(); };
-    switch (kind) {
-      case "happy": arc(4.2, 0, true); break;
-      case "laugh": arc(5, -2, true); arc(3, 7, true); break;
-      case "wink": arc(4.2, -8, false); break;
-      case "sleepy": x.globalAlpha = 0.75; arc(3.2, -4, false); x.globalAlpha = 0.6; x.strokeStyle = B; x.lineWidth = 1.6; x.shadowBlur = 8; x.beginPath(); x.moveTo(-rx + 3, 2); x.lineTo(-rx - 1, 6); x.moveTo(0, 6); x.lineTo(0, 11); x.moveTo(rx - 3, 2); x.lineTo(rx + 1, 6); x.stroke(); x.globalAlpha = 1; break;
-      case "focused": case "think": almond(3.6, -side * 0.2, 4.5); break;
-      case "alert": almond(8.5, -side * 0.08); break;
-      case "surprised": x.beginPath(); x.arc(0, 0, 16, 0, 7); x.shadowColor = A; x.shadowBlur = 24; x.strokeStyle = A; x.lineWidth = 6; x.stroke(); x.shadowBlur = 10; x.strokeStyle = B; x.lineWidth = 2.6; x.stroke(); x.beginPath(); x.arc(0, 0, 6.5, 0, 7); x.fillStyle = B; x.fill(); break;
-      case "worried": almond(7.4, side * 0.3, 10); x.strokeStyle = A; x.lineWidth = 1.8; x.shadowBlur = 8; x.globalAlpha = 0.8; x.beginPath(); x.moveTo(side * -8, 14); x.quadraticCurveTo(side * -10, 21, side * -5, 23); x.stroke(); x.globalAlpha = 1; break;
-      case "annoyed": { x.beginPath(); x.moveTo(-rx, -3); x.lineTo(rx, -3 + side * 3); x.quadraticCurveTo(rx * 0.6, 12, 0, 12); x.quadraticCurveTo(-rx * 0.6, 12, -rx, -3); x.closePath(); x.shadowColor = A; x.shadowBlur = 22; x.fillStyle = A; x.globalAlpha = 0.55; x.fill(); x.globalAlpha = 1; x.shadowBlur = 10; x.fillStyle = B; x.fill(); break; }
-      case "dizzy": { x.lineJoin = x.lineCap = "round"; x.shadowColor = A; x.shadowBlur = 14; x.strokeStyle = B; x.lineWidth = 2.6; x.beginPath(); for (let t = 0; t < Math.PI * 5; t += 0.2) { const r = t * 1.4, px = Math.cos(t) * r, py = Math.sin(t) * r; t ? x.lineTo(px, py) : x.moveTo(px, py); } x.stroke(); break; }
-      default: almond(7.2, -side * 0.06, 8);
-    }
-    eyeT[i].needsUpdate = true;
-  }
-  const LOOK = { neutral: ["neutral", "neutral"], happy: ["happy", "happy"], laugh: ["laugh", "laugh"], joke: ["happy", "wink"], think: ["focused", "focused"], focused: ["focused", "focused"], alert: ["alert", "alert"], surprised: ["surprised", "surprised"], worried: ["worried", "worried"], annoyed: ["annoyed", "annoyed"], sleepy: ["sleepy", "sleepy"], dizzy: ["dizzy", "dizzy"] };
-  let drawnLook = "";
-  function setLook(k) { if (k === drawnLook) return; drawnLook = k; const L = LOOK[k] || LOOK.neutral; drawEye(0, L[0], -1); drawEye(1, L[1], 1); }
-  // spine / neck
-  for (let i = 0; i < 5; i++) { const r = new T.Mesh(new T.CylinderGeometry(0.2, 0.22, 0.12, 14), spineMat); r.position.set(0, -1.05 - i * 0.13, -0.18); body.add(r); }
-  // sleeping Z
-  const zSpr = (() => { const c = document.createElement("canvas"); c.width = c.height = 128; const x = c.getContext("2d"); x.font = "bold 84px 'Exo 2',Arial,sans-serif"; x.textAlign = "center"; x.textBaseline = "middle"; x.fillStyle = "#e9e2ff"; x.shadowColor = "#6842cd"; x.shadowBlur = 24; x.fillText("z", 56, 70); x.font = "bold 46px Arial"; x.fillText("Z", 98, 34);
-    const s = new T.Sprite(new T.SpriteMaterial({ map: new T.CanvasTexture(c), transparent: true, opacity: 0, depthWrite: false, blending: T.AdditiveBlending, toneMapped: false })); s.scale.set(0.9, 0.9, 1); s.position.set(1.15, 1.0, 0.6); head.add(s); return s; })();
-
-  /* ---------- body: slim tall two-piece suit ---------- */
-  const sp = (w, m) => Math.sign(w) * Math.pow(Math.abs(w), m);
-  const KA = [[-1.45, 0.62], [-1.75, 1.1], [-2.05, 1.58], [-2.5, 1.74], [-3.3, 1.7], [-4.6, 1.46], [-5.9, 1.2], [-7.2, 1.26], [-8.5, 1.3]];
-  const KD = [[-1.45, 0.5], [-2.0, 0.66], [-3.4, 0.8], [-5.9, 0.68], [-7.2, 0.74], [-8.5, 0.78]];
-  const keyed = (K, y) => { if (y >= K[0][0]) return K[0][1]; for (let i = 0; i < K.length - 1; i++) { if (y <= K[i][0] && y >= K[i + 1][0]) { const t = (K[i][0] - y) / (K[i][0] - K[i + 1][0]); return K[i][1] + (K[i + 1][1] - K[i][1]) * t * t * (3 - 2 * t); } } return K[K.length - 1][1]; };
-  const TSP = 2.7, TOPY = -1.45, BOTY = -8.5;
-  const bodyGeo = (() => { const ws = 80, hs = 70, pos = [], uv = [], idx = [], e = 2 / TSP;
-    for (let j = 0; j <= hs; j++) { const y = TOPY + (BOTY - TOPY) * j / hs; const a = keyed(KA, y), c = keyed(KD, y); for (let i = 0; i <= ws; i++) { const lon = -Math.PI + 2 * Math.PI * i / ws; pos.push(a * sp(Math.sin(lon), e), y, c * sp(Math.cos(lon), e)); uv.push(i / ws, j / hs); } }
-    for (let j = 0; j < hs; j++) for (let i = 0; i < ws; i++) { const A = j * (ws + 1) + i, B = A + 1, C = A + ws + 1, D = C + 1; idx.push(A, C, B, B, C, D); }
-    return mkGeo(pos, uv, idx); })();
-  torsoG.add(new T.Mesh(bodyGeo, jacketMat));
-  const tz = (x, y) => { if (y > TOPY || y < BOTY) return null; const a = keyed(KA, y), c = keyed(KD, y); const q = 1 - Math.pow(Math.abs(x / a), TSP); return q > 0.0005 ? c * Math.pow(q, 1 / TSP) : null; };
-  const onFront = (x, y, lift) => { const z = tz(x, y); return V(x, y, (z == null ? 0.2 : z) + lift); };
-  // grid patch between two edge functions (x range per y) lying on the jacket front
-  function frontPatch(y0, y1, xl, xr, lift0, lift1, ny, nx, mat) {
-    const pos = [], uv = [], idx = []; nx = nx || 6;
-    for (let j = 0; j <= ny; j++) { const y = y0 + (y1 - y0) * j / ny; const a = xl(y), b = xr(y); for (let i = 0; i <= nx; i++) { const s = i / nx, x = a + (b - a) * s; const l0 = typeof lift0 === "function" ? lift0(y) : lift0, l1 = typeof lift1 === "function" ? lift1(y) : lift1; const am = keyed(KA, y) * 0.95; const p = onFront(Math.max(-am, Math.min(am, x)), y, l0 + (l1 - l0) * s); pos.push(p.x, p.y, p.z); uv.push(s, j / ny); } }
-    for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) { const A = j * (nx + 1) + i, B = A + 1, C = A + nx + 1, D = C + 1; idx.push(A, C, B, B, C, D); }
-    const m = new T.Mesh(mkGeo(pos, uv, idx), mat); torsoG.add(m); return m;
-  }
-  const VY0 = -1.5, VY1 = -4.7, vhalf = (y) => 0.55 * smooth(VY1, VY0, y) + 0.0;          // shirt V opening
-  frontPatch(VY0, VY1, (y) => -vhalf(y), (y) => vhalf(y), 0.025, 0.025, 36, 8, shirtMat);
-  // lapels (raised, rolled) + notch
-  const lapW = (y) => 0.2 + 0.46 * smooth(-4.7, -3.0, y) * (1 - 0.25 * smooth(-1.7, -2.4, y)) * 1 + 0.12 * smooth(-1.6, -2.0, -y + -0.0) * 0;
-  for (const s of [-1, 1]) frontPatch(-1.52, -4.75, (y) => (s < 0 ? -(vhalf(y) + lapW(y)) : vhalf(y)), (y) => (s < 0 ? -vhalf(y) : vhalf(y) + lapW(y)), s < 0 ? 0.015 : 0.075, s < 0 ? 0.075 : 0.015, 36, 6, jacketMat);
-  // tie: knot + blade (curves with the chest)
-  {
-    const tw = (y) => (y > -2.1 ? 0.15 + 0.03 * (-2.0 - y) : y > -5.0 ? 0.17 + 0.07 * smooth(-2.1, -5.0, y) : 0.24 * (1 - smooth(-5.0, -6.0, y) * 0.96));
-    frontPatch(-2.15, -6.0, (y) => -tw(y), (y) => tw(y), (y) => 0.075 + 0.02 * Math.sin((y + 2.1) * 0.9), (y) => 0.075 + 0.02 * Math.sin((y + 2.1) * 0.9), 40, 6, tieMat);
-    const knot = new T.Mesh(new T.SphereGeometry(1, 20, 14).scale(0.14, 0.12, 0.09), tieMat); knot.position.copy(onFront(0, -1.95, 0.08)); torsoG.add(knot);
-    // shirt collar ring + jacket collar
-    const col = new T.Mesh(new T.TorusGeometry(0.46, 0.085, 10, 36), shirtMat); col.rotation.x = Math.PI / 2 - 0.12; col.position.set(0, -1.48, -0.02); torsoG.add(col);
-    const jc = new T.Mesh(new T.TorusGeometry(0.66, 0.14, 12, 40), jacketMat); jc.rotation.x = Math.PI / 2 + 0.2; jc.position.set(0, -1.62, -0.12);
-  }
-  // jacket seam details: centre front line, chest welt, flap pockets, buttons (dark inset strips)
-  { const line = (pts, r) => { const g = new T.TubeGeometry(new T.CatmullRomCurve3(pts.map((p) => onFront(p[0], p[1], p[2] === undefined ? 0.03 : p[2]))), pts.length * 6, r || 0.012, 5, false); torsoG.add(new T.Mesh(g, darkMat)); };
-    line([[0, -4.75], [0, -6.0], [0, -7.2], [0, -8.4]], 0.014);
-    line([[-1.28, -3.9], [-0.78, -3.82]], 0.014);                                    // chest welt (left)
-    for (const s of [-1, 1]) { line([[s * 0.55, -6.78], [s * 1.12, -6.86]], 0.016); line([[s * 0.55, -7.18], [s * 1.12, -7.26]], 0.012); }   // hip flap pockets
-    for (let i = 0; i < 2; i++) { const b = new T.Mesh(new T.CylinderGeometry(0.075, 0.075, 0.03, 14), darkMat); const p = onFront(0.0, -4.85 - i * 0.55, 0.04); b.position.copy(p); b.rotation.x = Math.PI / 2; torsoG.add(b); } }
-  // arms: upper arm + forearm angled into the pockets
-  const limb = (a, b, ra, rb, mat, parent) => { const len = a.distanceTo(b), m = new T.Mesh(new T.CylinderGeometry(ra, rb, len, 22, 1), mat); m.position.copy(a).add(b).multiplyScalar(0.5); m.quaternion.setFromUnitVectors(V(0, 1, 0), a.clone().sub(b).normalize()); parent.add(m);
-    for (const [p, r] of [[a, ra], [b, rb]]) { const s = new T.Mesh(new T.SphereGeometry(r, 18, 14), mat); s.position.copy(p); parent.add(s); } };
-  for (const s of [-1, 1]) {
-    const S = V(s * 1.6, -2.35, -0.02), E = V(s * 1.98, -5.0, -0.1), Wr = V(s * 1.5, -7.05, 0.4);
-    limb(S, E, 0.46, 0.4, jacketMat, torsoG); limb(E, Wr, 0.4, 0.34, jacketMat, torsoG);
-    const cuff = new T.Mesh(new T.TorusGeometry(0.34, 0.035, 8, 22), darkMat); cuff.position.copy(Wr).lerp(E, 0.05); cuff.quaternion.setFromUnitVectors(V(0, 0, 1), E.clone().sub(Wr).normalize()); torsoG.add(cuff);
-  }
-  // trousers (slim, straight) below the jacket hem
-  for (const s of [-1, 1]) { const l = new T.Mesh(new T.CylinderGeometry(0.7, 0.58, 4.8, 28, 1), jacketMat); l.position.set(s * 0.62, -9.4, 0.02); l.scale.set(1, 1, 0.92); torsoG.add(l); const th = new T.Mesh(new T.CylinderGeometry(0.72, 0.7, 1.6, 28, 1), jacketMat); th.position.set(s * 0.62, -7.7, 0.02); torsoG.add(th); }
-
-  Z.onState = () => { drawnLook = ""; };
-  Z.onExpr = () => {};
-
-  /* ---- bloom (kept low: the eyes glow, nothing else) ---- */
-  let composer = null, bloom = null;
-  if (EffectComposer) {
-    const rt = new T.WebGLRenderTarget(256, 256, { type: T.HalfFloatType, samples: 4 });
-    composer = new EffectComposer(renderer, rt);
-    composer.addPass(new RenderPass(scene, camera));
-    bloom = new UnrealBloomPass(new T.Vector2(256, 256), 0.3, 0.5, 0.82);
-    composer.addPass(bloom); composer.addPass(new OutputPass());
-  }
-  let useBloom = !!composer;
-
-  /* ---- sizing ---- */
-  let zoom = 1, W = 0, H = 0, baseDist = 20, lookY = -3.6, bgTimer = 0, lookOverride = null, sleepAmt = 0;
-  function resize() {
-    W = stage.clientWidth || window.innerWidth; H = stage.clientHeight || window.innerHeight;
-    renderer.setPixelRatio(dpr); renderer.setSize(W, H, false);
-    camera.aspect = W / H; camera.updateProjectionMatrix();
-    if (composer) { composer.setPixelRatio(1); composer.setSize(Math.round(W * dpr), Math.round(H * dpr)); bloom.resolution.set(Math.round(W * dpr / 2), Math.round(H * dpr / 2)); }
-    const vf = camera.fov * Math.PI / 180, asp = camera.aspect;
-    const distW = (6.9 / 2) / (Math.tan(vf / 2) * asp), distH = (11.4 / 2) / Math.tan(vf / 2);
-    baseDist = clamp(distW, 15, 34);
-    if (asp > 1.1) baseDist = Math.max(distH * 0.62, 12);       // landscape: head and torso framed, not the whole figure
-    lookY = (lookOverride !== null) ? lookOverride : (asp > 1.1 ? -2.0 : -5.4);
-    camera.position.set(0, lookY - 0.5, baseDist * zoom); camera.lookAt(0, lookY, 0);
-    clearTimeout(bgTimer); bgTimer = setTimeout(() => { buildBackground(); }, bgTex ? 250 : 0); if (!bgTex) buildBackground();
-  }
-  window.addEventListener("resize", resize); window.addEventListener("orientationchange", () => setTimeout(resize, 250));
-  resize();
-
-  /* ---- interaction: drag to spin, pinch / wheel to zoom, tap, poke ---- */
-  let yaw = 0.0, pitch = 0.0, yawV = 0, lastInteract = -1e9, sway = 0, spinAcc = 0, lookX = 0, lookYv = 0;
-  const ptrs = new Map(); let pinch0 = 0, zoom0 = 1, downT = 0, moved = 0, downX = 0, downY = 0;
+  /* ---- interaction: tap (laugh), rapid pokes (annoyed), fast swipe or shake (dizzy), pinch / wheel zoom ---- */
+  const ptrs = new Map(); let pinch0 = 0, zoom0 = 1, downT = 0, moved = 0, lookX = 0, lookY = 0, swipeHits = [];
+  function dizzy() { const now = performance.now(); if (Z.fx && now < Z.fx.until && Z.fx.k === "dizzy") return; Z.fx = { k: "dizzy", until: now + 3400 }; Z.lastAct = now; speakText("Whoa… the room is spinning.", "dizzy"); setTimeout(() => { if (Z.expr === "dizzy") setExpr("neutral"); }, 3600); }
   stage.addEventListener("pointerdown", (e) => {
     if (e.target.closest && e.target.closest("button,input,a")) return;
-    stage.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (ptrs.size === 1) { downT = performance.now(); moved = 0; downX = e.clientX; downY = e.clientY; }
+    if (e.isPrimary) ptrs.clear();
+    try { stage.setPointerCapture(e.pointerId); } catch (er) {}
+    ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY, t: performance.now(), x0: e.clientX, y0: e.clientY, t0: performance.now(), v: 0 });
+    if (ptrs.size === 1) { downT = performance.now(); moved = 0; }
     if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinch0 = Math.hypot(a.x - b.x, a.y - b.y); zoom0 = zoom; }
-    lastInteract = performance.now();
+    if (window.DeviceMotionEvent && typeof DeviceMotionEvent.requestPermission === "function" && !init3D.askedMotion) { init3D.askedMotion = true; DeviceMotionEvent.requestPermission().catch(() => {}); }
   });
   stage.addEventListener("pointermove", (e) => {
-    lookX = (e.clientX / W - 0.5) * 2; lookYv = (e.clientY / H - 0.4) * 2;
+    lookX = (e.clientX / W - 0.5) * 2; lookY = (e.clientY / H - 0.4) * 2;
     const p = ptrs.get(e.pointerId); if (!p) return;
-    const dx = e.clientX - p.x, dy = e.clientY - p.y; p.x = e.clientX; p.y = e.clientY;
-    if (ptrs.size >= 2) { const [a, b] = [...ptrs.values()]; const d = Math.hypot(a.x - b.x, a.y - b.y); if (pinch0 > 0) zoom = Math.min(2.6, Math.max(0.5, zoom0 * d / pinch0)); moved += 99; }
-    else { yaw += dx * 0.0085; spinAcc += Math.abs(dx) * 0.0085; pitch = Math.max(-0.5, Math.min(0.6, pitch + dy * 0.004)); yawV = dx * 0.0085 * 60; moved += Math.abs(dx) + Math.abs(dy); }
-    lastInteract = performance.now();
+    const now = performance.now(), dx = e.clientX - p.x, dy = e.clientY - p.y, dtm = Math.max(1, now - p.t);
+    p.v = 0.6 * p.v + 0.4 * (Math.hypot(dx, dy) / dtm); p.x = e.clientX; p.y = e.clientY; p.t = now;
+    if (ptrs.size >= 2) { const [a, b] = [...ptrs.values()]; const d = Math.hypot(a.x - b.x, a.y - b.y); if (pinch0 > 0) zoom = Math.min(2.4, Math.max(0.8, zoom0 * d / pinch0)); moved += 99; }
+    else moved += Math.abs(dx) + Math.abs(dy);
   });
-  const up = (e) => { const had = ptrs.delete(e.pointerId); if (had && ptrs.size === 0 && moved < 10 && performance.now() - downT < 450) onTap(); if (ptrs.size < 2) pinch0 = 0; lastInteract = performance.now(); };
+  const up = (e) => {
+    const p = ptrs.get(e.pointerId), had = ptrs.delete(e.pointerId), now = performance.now();
+    if (had && p && ptrs.size === 0) {
+      const dist = Math.hypot(p.x - p.x0, p.y - p.y0), dur = Math.max(1, now - p.t0);
+      if (moved < 10 && now - downT < 450) onTap();
+      else if (dist > 110 && (dist / dur > 1.1 || p.v > 1.6)) { swipeHits.push(now); swipeHits = swipeHits.filter((t) => now - t < 1600); dizzy(); }
+    }
+    if (ptrs.size < 2) pinch0 = 0;
+  };
   stage.addEventListener("pointerup", up); stage.addEventListener("pointercancel", up);
-  stage.addEventListener("wheel", (e) => { e.preventDefault(); zoom = Math.min(2.6, Math.max(0.5, zoom * Math.exp(e.deltaY * 0.0012))); lastInteract = performance.now(); }, { passive: false });
-  document.addEventListener("gesturestart", (e) => e.preventDefault());   // stop iOS page zoom
+  stage.addEventListener("wheel", (e) => { e.preventDefault(); zoom = Math.min(2.4, Math.max(0.8, zoom * Math.exp(-e.deltaY * 0.0012))); }, { passive: false });
+  document.addEventListener("gesturestart", (e) => e.preventDefault());
   document.addEventListener("dblclick", (e) => e.preventDefault());
-
+  let shakeE = 0, lastMot = 0;
+  addEventListener("devicemotion", (e) => { const a = e.acceleration || e.accelerationIncludingGravity; if (!a) return; const now = performance.now(), dt = Math.min(0.2, (now - (lastMot || now)) / 1000); lastMot = now;
+    const m = Math.hypot(a.x || 0, a.y || 0, a.z || 0) - (e.acceleration ? 0 : 9.8); shakeE = shakeE * Math.exp(-dt * 2) + Math.max(0, Math.abs(m) - 12) * dt; if (shakeE > 2.2) { shakeE = 0; dizzy(); } });
   /* ---- loop ---- */
   const reduced = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
-  let last = performance.now(), acc = 0, frames = 0, slow = 0, running = true, shown = false;
-  let blinkAt = performance.now() + 2500, blinkT = -1, wasSleep = false, swayAmp = 0, lastBg = 0, jawNow = 0;
-  const glowCol = new T.Color(PAL.eyeHalo);
+  let last = performance.now(), running = true, shown = false, sleepAmt = 0, wasSleep = false, blinkAt = performance.now() + 2500, blinkT = -1, jawNow = 0, flick = 0.5, flickTo = 0.5, flickAt = 0, flash = 0;
+  const R = { forceLook: null, forceJaw: null, still: false };
   function frame(ms) {
-    if (!running) return;
-    requestAnimationFrame(frame);
-    let dt = Math.min(0.05, (ms - last) / 1000); last = ms;
-    tickShared(ms, dt);
-    const t = ms / 1000;
-    acc += dt; frames++;
-    if (acc > 2) { const fps = frames / acc; acc = 0; frames = 0;
-      if (fps < 40) { slow++; if (slow >= 2) { if (useBloom) { useBloom = false; } else if (dpr > 1.1) { dpr = Math.max(1, dpr * 0.75); resize(); } slow = 0; } } else slow = 0; }
-    // ---- autonomous states: fx (laugh / annoyed / dizzy / surprised) and idle sleep
-    const nowMs = performance.now();
+    if (!running) return; requestAnimationFrame(frame);
+    const dt = Math.min(0.05, (ms - last) / 1000); last = ms; tickShared(ms, dt);
+    const t = ms / 1000, nowMs = performance.now();
     const fx = Z.fx && nowMs < Z.fx.until ? Z.fx.k : null; if (Z.fx && !fx) Z.fx = null;
     Z.sleeping = !Z.speaking && !fx && nowMs - Z.lastAct > 45000;
     sleepAmt += ((Z.sleeping ? 1 : 0) - sleepAmt) * Math.min(1, dt * 2.2);
-    if (Z.sleeping && !wasSleep) { try { if (synth) synth.cancel(); } catch (e) {} }
-    wasSleep = Z.sleeping;
-    const eff = fx || (Z.sleeping ? "sleepy" : Z.expr);
-    if (Z.stale !== lastStale) { lastStale = Z.stale; drawnLook = ""; }
+    if (Z.sleeping && !wasSleep) { try { if (synth) synth.cancel(); } catch (e) {} } wasSleep = Z.sleeping;
+    const eff = R.forceLook || fx || (Z.sleeping ? "sleepy" : Z.expr);
     setLook(eff);
-    // spin dizziness: accumulated rotation (drag or fling) decays slowly
-    if (!ptrs.size) spinAcc += Math.abs(yawV) * dt; spinAcc *= Math.exp(-dt * 0.45);
-    if (spinAcc > 11 && !fx) { spinAcc = 0; Z.fx = { k: "dizzy", until: nowMs + 3400 }; speakText("Whoa… the room is spinning.", "dizzy"); setTimeout(() => { if (Z.expr === "dizzy") setExpr("neutral"); }, 3600); }
-    const pulse = 0.5 + 0.5 * Math.sin(t * 2.2), talk = Z.talk, dim = 1 - 0.55 * sleepAmt;
-    rimUni.uRimC.value.set(Z.stale ? "#6b678f" : PAL.rim); rimUni.uRimM.value.set(Z.stale ? "#a9a6c8" : PAL.rimHi);
-    const sk = (0.92 + pulse * 0.1 + talk * 0.7) * dim;
-    eyeMat[0].color.setScalar(sk); eyeMat[1].color.setScalar(sk);
-    glowCol.set(Z.stale ? staleCol.halo : PAL.eyeHalo);
-    eyePiv.forEach((p, i) => { eyeL[i].color.copy(glowCol); eyeL[i].intensity = (0.35 + 0.35 * talk) * dim * (p.scale.y > 0.3 ? 1 : 0.3); const w = p.getWorldPosition(V(0, 0, 0)); eyeL[i].position.copy(w); eyeL[i].position.add(V(0, 0, 0.18).applyQuaternion(head.getWorldQuaternion(new T.Quaternion()))); });
-    // lightning aura (redrawn ~12x/s)
-    if (ms - lastBg > 80) { lastBg = ms; drawLightning(ms, talk, false); }
-    // idle bob + breathing: confident stance, chin slightly up
-    const br = reduced ? 0 : 1, brs = 1 - 0.5 * sleepAmt;
-    body.position.y = Math.sin(t * 1.15 * brs) * 0.035 * br;
-    const breath = 1 + Math.sin(t * 1.9 * brs) * 0.006 * br;
-    torsoG.scale.set(breath, 1 + Math.sin(t * 1.9 * brs) * 0.004 * br, breath);
-    const laugh = fx === "laugh" ? 1 : 0, dizzy = fx === "dizzy" ? 1 : 0, annoyed = fx === "annoyed" || Z.expr === "annoyed" ? 1 : 0;
-    const tilt = -0.05 + (eff === "focused" || eff === "think" ? 0.07 : eff === "worried" ? 0.1 : eff === "surprised" ? -0.07 : eff === "happy" ? -0.04 : 0);
-    head.rotation.x = Math.sin(t * 0.8) * 0.02 * br + tilt + talk * 0.03 + laugh * (-0.1 * Math.abs(Math.sin(t * 15))) + sleepAmt * 0.38 + pitch * 0.45 + dizzy * Math.sin(t * 5.3) * 0.08;
-    head.rotation.z = (eff === "think" || eff === "focused" ? 0.07 : eff === "worried" ? -0.07 : eff === "joke" ? -0.06 : 0) + Math.sin(t * 0.6) * 0.008 * br + dizzy * Math.sin(t * 6.1) * 0.13 + sleepAmt * -0.08
-      + annoyed * Math.sin(t * 22) * (fx === "annoyed" ? 0.02 : 0);
-    head.rotation.y = (lookX * 0.14) * (1 - sleepAmt) * br + annoyed * Math.sin(t * 28) * 0.012;
-    head.position.y = Math.sin(t * 1.15 * brs + 0.6) * 0.02 * br - sleepAmt * 0.06 + laugh * Math.abs(Math.sin(t * 15)) * 0.03;
-    // jaw sync: speech + laughter + expression
-    const jawOpen = talk * (0.55 + 0.45 * Math.sin(t * 22 + 1)) * 0.5 + (eff === "happy" || eff === "joke" ? 0.04 : 0) + laugh * (0.18 + 0.2 * Math.abs(Math.sin(t * 15))) + (eff === "surprised" ? 0.2 : 0) + (eff === "worried" ? 0.025 + 0.012 * Math.sin(t * 17) : 0) + (eff === "annoyed" ? 0.0 : 0) + sleepAmt * 0.07;
-    jawNow += (jawOpen - jawNow) * Math.min(1, dt * 30);
-    jawG.rotation.x = jawNow * 1.25; jawG.position.z = PIV.z - jawNow * 0.03; jawG.rotation.y = annoyed * 0.05;
-    // eyes: blink, dizzy spin
-    if (nowMs > blinkAt && blinkT < 0 && !Z.sleeping && eff !== "happy" && eff !== "laugh" && eff !== "dizzy" && eff !== "sleepy") { blinkT = 0; blinkAt = nowMs + 2200 + rnd() * 4200; }
+    const talk = Z.talk, laugh = eff === "laugh" ? 1 : 0, dz = eff === "dizzy" ? 1 : 0, ann = eff === "annoyed" ? 1 : 0, br = reduced || R.still ? 0 : 1;
+    // jaw sync: speech amplitude + laughter + expression (0..~0.5 -> px)
+    const jawOpen = talk * (0.55 + 0.45 * Math.sin(t * 22 + 1)) * 0.5 + (eff === "happy" || eff === "joke" ? 0.04 : 0) + laugh * (0.18 + 0.2 * Math.abs(Math.sin(t * 15))) + (eff === "surprised" ? 0.24 : 0) + (eff === "worried" ? 0.03 + 0.015 * Math.sin(t * 17) : 0) + sleepAmt * 0.08;
+    jawNow += ((R.forceJaw != null ? R.forceJaw : jawOpen) - jawNow) * Math.min(1, dt * 30);
+    Z.jaw = jawNow;
+    // blink
+    if (nowMs > blinkAt && blinkT < 0 && !Z.sleeping && !/happy|laugh|dizzy|sleepy/.test(eff)) { blinkT = 0; blinkAt = nowMs + 2200 + Math.random() * 4200; }
     let bl = 1; if (blinkT >= 0) { blinkT += dt; bl = Math.abs(blinkT - 0.07) / 0.07; if (blinkT > 0.14) { blinkT = -1; bl = 1; } }
-    eyePiv.forEach((p, i) => { p.scale.set(1, Math.max(0.08, Math.min(1, bl)), 1); p.rotation.z = eff === "dizzy" ? t * (i ? -7 : 7) : 0; });
+    if (eff === "sleepy") bl = Math.min(bl, 0.75);
+    // lightning flicker: random targets, occasional flash, brighter while talking
+    if (nowMs > flickAt) { flickTo = 0.15 + Math.random() * 0.55; flickAt = nowMs + 60 + Math.random() * 220; if (Math.random() < 0.06) flash = 1; }
+    flick += (flickTo - flick) * Math.min(1, dt * 14); flash = Math.max(0, flash - dt * 3.5);
+    const dim = 1 - 0.55 * sleepAmt, staleK = Z.stale ? 0.45 : 1;
+    const boltsA = (flick * 0.8 + flash * 0.9 + talk * 0.5) * dim * staleK * (br ? 1 : 0.4);
+    const glow = (0.85 + 0.15 * Math.sin(t * 2.2) + talk * 0.4) * dim;
+    // draw
+    const L = layout(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = PAL.bg; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const bob = Math.sin(t * 1.15 * (1 - 0.5 * sleepAmt)) * 3 * br + laugh * Math.abs(Math.sin(t * 15)) * -3 + sleepAmt * 4;
+    const breath = 1 + Math.sin(t * 1.9 * (1 - 0.5 * sleepAmt)) * 0.004 * br;
+    const rot = (dz * Math.sin(t * 5.3) * 0.035 + ann * Math.sin(t * 28) * 0.006 + sleepAmt * -0.02 + lookX * 0.004) * (br || dz || ann ? 1 : 0);
+    const shakeX = ann * Math.sin(t * 40) * 1.4;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.translate(L.ox, L.oy); ctx.scale(L.s, L.s);
+    ctx.translate(ART.head[0] + shakeX, 1280); ctx.scale(breath, breath); ctx.translate(-ART.head[0], -1280); // breathe from the feet
+    ctx.translate(ART.head[0], ART.head[1] + bob); ctx.rotate(rot); ctx.translate(-ART.head[0], -ART.head[1]);
+    paintZero(ctx, img, bolts, eyeCv, { look: eff, jaw: jawNow * 20, blink: bl, glow, bolts: boltsA, dizzyT: t, stale: Z.stale });
+    if (sleepAmt > 0.02) { ctx.globalAlpha = sleepAmt * 0.28; ctx.fillStyle = "#07040d"; ctx.fillRect(-200, -200, 1200, 1700); ctx.globalAlpha = 1; }
+    // edge fade into the page background (landscape / zoom)
+    const fade = (x0, x1) => { const g = ctx.createLinearGradient(x0, 0, x1, 0); g.addColorStop(0, "rgba(6,3,12,0)"); g.addColorStop(1, "rgba(6,3,12,1)"); ctx.fillStyle = g; ctx.fillRect(Math.min(x0, x1), -300, Math.abs(x1 - x0), 1900); };
+    fade(640, 724); fade(80, -4);
     // sleeping z
-    zSpr.material.opacity = Z.sleeping ? 0.5 + 0.5 * Math.sin(t * 1.6) : 0; zSpr.position.y = 1.0 + ((t * 0.35) % 1) * 0.5; zSpr.position.x = 1.2 + Math.sin(t * 1.6) * 0.08;
-    // rotation: drag / fling, then ease back to face front with a gentle sway (never spins by itself)
-    const idle = performance.now() - lastInteract > 2500 && ptrs.size === 0;
-    if (!ptrs.size) { yaw += yawV * dt; yawV *= Math.pow(0.04, dt); }
-    if (idle) { const f = Math.round(yaw / (Math.PI * 2)) * Math.PI * 2; yaw += (f - yaw) * Math.min(1, dt * (Z.speaking || Z.talk > 0.05 ? 2.2 : 0.9)); pitch += (0 - pitch) * Math.min(1, dt * 1.5); }
-    swayAmp += ((idle && !reduced ? 1 : 0) - swayAmp) * Math.min(1, dt * 1.2); sway = Math.sin(t * 0.42) * 0.22 * swayAmp * (Z.speaking ? 0.3 : 1);
-    zero.rotation.y = yaw + sway;
-    const dist = baseDist * zoom;
-    camera.position.set(0, lookY - 0.5 + pitch * 1.2, dist); camera.lookAt(0, lookY, 0);
-    if (useBloom && composer) { bloom.strength = 0.28 + talk * 0.25; composer.render(dt); } else renderer.render(scene, camera);
+    if (Z.sleeping || sleepAmt > 0.05) { const zz = (t * 0.35) % 1; ctx.save(); ctx.globalAlpha = sleepAmt * (0.5 + 0.5 * Math.sin(t * 1.6)); ctx.fillStyle = "#e9e2ff"; ctx.shadowColor = "#6842cd"; ctx.shadowBlur = 14; ctx.font = "bold 30px Arial,sans-serif"; ctx.fillText("z", 420 + Math.sin(t * 1.6) * 4, 200 - zz * 40); ctx.font = "bold 20px Arial,sans-serif"; ctx.fillText("Z", 445, 175 - zz * 40); ctx.restore(); }
     if (!shown) { shown = true; stage.classList.add("live"); Z.gl = true; }
   }
-  let lastStale = Z.stale;
   document.addEventListener("visibilitychange", () => { if (document.hidden) running = false; else if (!running) { running = true; last = performance.now(); requestAnimationFrame(frame); } });
-  canvas.addEventListener("webglcontextlost", (e) => { e.preventDefault(); running = false; stage.classList.remove("live"); Z.gl = false; });
-  canvas.addEventListener("webglcontextrestored", () => { running = true; last = performance.now(); requestAnimationFrame(frame); });
   requestAnimationFrame(frame);
-  window.__zeroThree = { renderer, scene, camera, head, zero, setYaw: (v) => { yaw = v; sway = 0; swayAmp = 0; lastInteract = performance.now() + 1e7; }, setPitch: (v) => { pitch = v; }, setZoom: (z) => { zoom = z; }, setLookY: (v) => { lookOverride = v; lookY = v; }, setLook: (x, y) => { lookX = x; lookYv = y; }, setBloom: (v) => { useBloom = !!v && !!composer; } };
+  window.__zero2d = { R, setZoom: (z) => { zoom = z; }, dizzy, paint: (c, look, jawPx, opts) => { const ec = [0, 1].map(() => { const e = document.createElement("canvas"); e.width = 256; e.height = 192; return e; }); const L2 = LOOK[look] || LOOK.neutral; drawEyeSprite(ec[0], L2[0], -1, false); drawEyeSprite(ec[1], L2[1], 1, false); paintZero(c, img, bolts, ec, Object.assign({ look, jaw: jawPx || 0, blink: 1, glow: 1, bolts: 0.55, dizzyT: 0.6, stale: false }, opts || {})); } };
   return true;
 }
 
@@ -1394,7 +1126,7 @@ if (!(window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matche
 kbPromise = loadKB();
 refresh();
 const readyP = Promise.all([kbPromise, dataPromise]);
-init3D().then((ok) => { if (!ok) console.info("still-image mode"); }).catch((e) => console.warn("3D error", e));
+init3D().then((ok) => { if (!ok) console.info("still-image mode"); }).catch((e) => console.warn("2D error", e));
 if ("serviceWorker" in navigator) { /* intentionally not registering a worker: this page is a plain static page; the app's worker (if any) already covers the scope */ }
 setInterval(() => { if (!document.hidden) refresh(); }, 5 * 60 * 1000);
 </script>
