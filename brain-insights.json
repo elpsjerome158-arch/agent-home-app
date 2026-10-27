@@ -1,19 +1,19 @@
 {
  "schema": "brain-insights/1",
- "generated_at": "2026-10-23 08:26:00 CT",
+ "generated_at": "2026-10-27 00:47:03 CT",
  "insights": [
   {
-   "text": "All 12 logged setups rejected for ~1.9% spread plus downtrend (P-001–P-018)",
+   "text": "All 13 logged setups rejected for ~1.9% spread plus downtrend (P-001–P-019)",
    "source": "Trade Journal Bot",
    "priority": 1
   },
   {
-   "text": "11 of 12 rejected setups have no decision score (P-002, P-003, P-004, P-005, P-006, P-007, P-009, P-011, P-015, P-016, P-018); scheduled cycles don't poll Setup Scout, so Devil's [file] Coach never review",
+   "text": "12 of 13 rejected setups have no decision score (P-002, P-003, P-004, P-005, P-006, P-007, P-009, P-011, P-015, P-016, P-018, P-019); scheduled cycles don't poll Setup Scout, so Devil's [file] Coach never review",
    "source": "Trade Journal Bot",
    "priority": 1
   },
   {
-   "text": "IT crash log: 16 entries, 1 open (rh-check.mjs LIVE view check exits 1 (Desk still renders))",
+   "text": "IT crash log: 16 entries, 0 open",
    "source": "IT Agent",
    "priority": 2
   },
@@ -23,14 +23,24 @@
    "priority": 3
   },
   {
-   "text": "24h: SOL 104.22 (-0.10%), BTC 81,606.3 (-0.15%), ETH 2,396.21 (-0.11%)",
+   "text": "24h: SOL 100.28 (+0.09%), BTC 79,899.1 (+0.45%), ETH 2,317.73 (+0.60%)",
    "source": "brain hub",
    "priority": 3
   },
   {
-   "text": "RSI(14) daily at 2026-10-23 04:46 CT: 12 overbought (AWK, BOXX, COST, EGBN, KO), 26 oversold (ARR, ASTS, AVAV, BAC, BTDR) of 188",
+   "text": "RSI(14) daily at 2026-10-23 08:43 CT: 12 overbought (AWK, BOXX, COST, EGBN, KO), 26 oversold (ARR, ASTS, AVAV, BAC, BTDR) of 188",
    "source": "RSI tracker",
    "priority": 3
+  },
+  {
+   "text": "Desk graded trades [file] toward first review; live gate needs 50",
+   "source": "Trade Journal Bot",
+   "priority": 4
+  },
+  {
+   "text": "Top Meme Scout blocker: 'community_or_tweet_with_community' (4144 of 75692 rows)",
+   "source": "Meme Scout",
+   "priority": 4
   }
  ]
 }
