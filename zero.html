@@ -1,0 +1,785 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ZERO</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#05060b">
+<meta name="color-scheme" content="dark">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Zero">
+<link rel="manifest" href="zero.webmanifest">
+<link rel="apple-touch-icon" href="zero-icon-180.png">
+<link rel="icon" type="image/png" href="zero-icon-192.png">
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+<style>
+:root{--cyan:#2DD4FF;--pink:#FF3B7A;--mag:#E040FB;--bg:#05060b;--glow:var(--cyan);--sat:env(safe-area-inset-top,0px);--sab:env(safe-area-inset-bottom,0px)}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:var(--bg);color:#E9ECF2;overflow:hidden;overscroll-behavior:none;
+  font:13px/1.35 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+#stage{position:fixed;inset:0;height:100dvh;touch-action:none;background:radial-gradient(120% 90% at 50% 35%,#0b1020 0%,#05060b 70%)}
+#gl{position:absolute;inset:0;width:100%;height:100%;display:block;opacity:0;transition:opacity .8s}
+#stage.live #gl{opacity:1}
+/* still-image fallback / poster */
+#still{position:absolute;left:50%;top:6%;width:min(100vw,66dvh);aspect-ratio:1;transform:translateX(-50%);transition:opacity .8s;pointer-events:none}
+#still img{width:100%;height:100%;display:block;object-fit:cover;border-radius:18px;animation:breathe 5s ease-in-out infinite;-webkit-mask-image:radial-gradient(closest-side,#000 78%,transparent 100%);mask-image:radial-gradient(closest-side,#000 78%,transparent 100%)}
+#stage.live #still{opacity:0}
+#visorGlow{position:absolute;left:46.8%;top:33%;width:34%;height:30%;transform:translate(-50%,-50%);border-radius:50%;
+  background:radial-gradient(closest-side,color-mix(in srgb,var(--glow) 55%,transparent),transparent 75%);mix-blend-mode:screen;opacity:.45;animation:pulse 2.6s ease-in-out infinite}
+#stage.talking #visorGlow{animation:none;opacity:.85}
+@keyframes breathe{50%{transform:scale(1.02) translateY(-1%)}}
+@keyframes pulse{50%{opacity:.8}}
+/* scanline + vignette */
+#scan{position:fixed;inset:0;pointer-events:none;z-index:3;opacity:.5;
+  background:repeating-linear-gradient(0deg,rgba(255,255,255,.035) 0 1px,transparent 1px 3px);mix-blend-mode:screen}
+#scan::after{content:"";position:absolute;left:0;right:0;height:22%;top:-25%;background:linear-gradient(180deg,transparent,rgba(45,212,255,.07),transparent);animation:sweep 7s linear infinite}
+@keyframes sweep{to{top:110%}}
+#vig{position:fixed;inset:0;pointer-events:none;z-index:2;background:radial-gradient(120% 100% at 50% 40%,transparent 55%,rgba(0,0,0,.65) 100%)}
+/* HUD */
+#hud{position:fixed;left:0;right:0;top:0;z-index:5;padding:calc(var(--sat) + 10px) 14px 0;display:flex;gap:10px;justify-content:space-between;pointer-events:none}
+.panel{background:rgba(8,12,20,.62);border:1px solid color-mix(in srgb,var(--glow) 55%,transparent);border-radius:10px;padding:7px 10px;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+  box-shadow:0 0 14px color-mix(in srgb,var(--glow) 25%,transparent)}
+#hudL{min-width:150px}
+#hudL b{letter-spacing:.2em;color:var(--glow);font-size:14px}
+#hudL .st{display:flex;align-items:center;gap:6px;margin-top:2px;font-size:11px}
+#dot{width:8px;height:8px;border-radius:50%;background:var(--glow);box-shadow:0 0 8px var(--glow);animation:pulse 2s infinite}
+#hudL .row{color:#9aa6bd;font-size:10.5px;white-space:nowrap}
+#hudL .row i{font-style:normal;color:#E9ECF2}
+#hudR{display:flex;flex-direction:column;gap:6px;pointer-events:auto}
+.ib{width:38px;height:38px;border-radius:10px;border:1px solid color-mix(in srgb,var(--glow) 55%,transparent);background:rgba(8,12,20,.62);color:var(--glow);font-size:17px;display:grid;place-items:center;text-decoration:none;cursor:pointer;padding:0}
+.ib[aria-pressed=true]{color:#667}
+/* bottom dock */
+#dock{position:fixed;left:0;right:0;bottom:0;z-index:5;padding:0 12px calc(var(--sab) + 10px);display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none}
+#bubble{pointer-events:auto;max-width:min(94vw,520px);width:100%;min-height:0;display:none}
+#bubble.show{display:block}
+#bubble .panel{font-size:14px;line-height:1.4;color:#EAF7FF}
+#bubble .who{display:block;font-size:10px;letter-spacing:.2em;color:var(--glow);margin-bottom:3px}
+#bubble .acts{margin-top:8px;display:flex;gap:8px;flex-wrap:wrap}
+.btn{font:inherit;color:#05060b;background:var(--glow);border:0;border-radius:999px;padding:7px 14px;font-weight:700;text-decoration:none;cursor:pointer}
+.btn.ghost{background:transparent;color:var(--glow);border:1px solid var(--glow)}
+#wave{width:min(94vw,520px);height:34px;display:block;opacity:.9}
+#bar{pointer-events:auto;display:flex;gap:8px;width:min(94vw,520px);align-items:center}
+#q{flex:1;min-width:0;height:44px;border-radius:22px;border:1px solid color-mix(in srgb,var(--glow) 55%,transparent);background:rgba(8,12,20,.7);color:#EAF7FF;padding:0 16px;font:16px ui-monospace,Menlo,monospace;outline:none;-webkit-user-select:text;user-select:text}
+#q::placeholder{color:#6f7a90}
+#mic{width:64px;height:64px;border-radius:50%;border:2px solid var(--glow);background:radial-gradient(circle,color-mix(in srgb,var(--glow) 30%,#05060b),#05060b);color:var(--glow);font-size:26px;display:grid;place-items:center;flex:none;touch-action:none;cursor:pointer;padding:0;
+  box-shadow:0 0 18px color-mix(in srgb,var(--glow) 40%,transparent);-webkit-user-select:none}
+#mic.rec{background:var(--pink);border-color:var(--pink);color:#fff;box-shadow:0 0 28px var(--pink);transform:scale(1.1)}
+#send{height:44px;padding:0 14px;flex:none}
+#wake{position:fixed;left:0;right:0;bottom:calc(var(--sab) + 158px);text-align:center;z-index:6;pointer-events:none;letter-spacing:.25em;font-size:12px;color:var(--glow);text-shadow:0 0 10px var(--glow);animation:pulse 1.6s infinite}
+#wake.hide{display:none}
+#hint{font-size:10.5px;color:#6f7a90;text-align:center;pointer-events:none;letter-spacing:.04em}
+@media (prefers-reduced-motion:reduce){#scan::after,#still img,#dot,#wake{animation:none}}
+@media (min-width:700px){#hud{padding-left:24px;padding-right:24px}}
+</style>
+</head>
+<body>
+<div id="stage" aria-label="Zero, 3D avatar">
+  <div id="still"><img src="zero-avatar-sq.jpg" alt="Zero: black space-suit figure with a neon skull in the visor" decoding="async"><div id="visorGlow"></div></div>
+  <canvas id="gl"></canvas>
+</div>
+<div id="vig"></div><div id="scan"></div>
+
+<div id="hud">
+  <div id="hudL" class="panel">
+    <b>ZERO</b>
+    <div class="st"><span id="dot"></span><span id="stText">LINKING…</span></div>
+    <div class="row">notes <i id="hNotes">--</i> · open <i id="hOpen">--</i></div>
+    <div class="row">agents <i id="hAgents">--</i> · data <i id="hAge">--</i></div>
+  </div>
+  <div id="hudR">
+    <button class="ib" id="mute" aria-label="Mute voice" aria-pressed="false">🔊</button>
+    <a class="ib" id="appLink" href="./" aria-label="Open Agent Home">⌂</a>
+  </div>
+</div>
+
+<div id="wake">TAP TO WAKE ZERO</div>
+<div id="dock">
+  <div id="bubble" aria-live="polite"></div>
+  <canvas id="wave" width="520" height="34"></canvas>
+  <div id="bar">
+    <input id="q" type="text" enterkeyhint="send" autocomplete="off" autocorrect="off" autocapitalize="sentences" placeholder="Ask Zero…" aria-label="Ask Zero">
+    <button class="btn" id="send">Send</button>
+    <button id="mic" aria-label="Hold to talk">🎙</button>
+  </div>
+  <div id="hint">hold 🎙 to talk · or type · drag to spin · pinch to zoom</div>
+</div>
+
+<script>
+/* ============================================================
+   ZERO — standalone 3D avatar + voice. Public data only.
+   Reads: brain-widget.json (same folder) and live.json (agent-home-web) and gem-x.json (X Radar).
+   No private files, no accounts, no P&L, no trading. Nothing is ever sent anywhere from this page.
+   ============================================================ */
+"use strict";
+const BASE = new URL("./", location.href).href;
+const URL_BW = BASE + "brain-widget.json";
+const URL_GX = BASE + "gem-x.json";
+const URL_LIVE = "https://elpsjerome158-arch.github.io/agent-home-web/StreamingAssets/AgentHome/live.json";
+const $ = (id) => document.getElementById(id);
+const stage = $("stage");
+const DAY = 86400;
+
+/* ---------- shared state (read by the 3D loop) ---------- */
+const Z = { talk: 0, speaking: false, pulse: 0, expr: "neutral", stale: false, fresh: true, woke: false, muted: false,
+            data: null, intent: null, onExpr: null, onState: null, simTalkUntil: 0 };
+
+/* ---------- data (public only) ---------- */
+async function getJSON(u) {
+  try { const r = await fetch(u + (u.includes("?") ? "&" : "?") + "t=" + Date.now(), { cache: "no-store" }); if (!r.ok) throw 0; return await r.json(); }
+  catch (e) { return null; }
+}
+const num = (x) => (Number.isFinite(+x) && x !== null ? +x : 0);
+function ageSec(iso, ts) {
+  if (ts) return Math.max(0, Date.now() / 1000 - ts);
+  const t = Date.parse(iso || ""); return Number.isFinite(t) ? Math.max(0, (Date.now() - t) / 1000) : null;
+}
+function ageWords(s) {
+  if (s == null) return "unknown age";
+  if (s < 3600) return Math.max(1, Math.round(s / 60)) + " minutes";
+  if (s < DAY) { const h = Math.round(s / 3600); return h + (h === 1 ? " hour" : " hours"); }
+  const d = Math.round(s / DAY); return d + (d === 1 ? " day" : " days");
+}
+function ageShort(s) { if (s == null) return "--"; return s < 3600 ? Math.max(1, Math.round(s / 60)) + "m" : s < DAY ? Math.round(s / 3600) + "h" : Math.round(s / DAY) + "d"; }
+const PRETTY = { "perps-market-scout": "Market Scout", "trade-journal-bot": "Trade Journal", "wallet-watch": "Wallet Watch", "gem-search": "Gem Search" };
+const prettyId = (id) => PRETTY[id] || String(id || "agent").replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+
+function summarize(bw, live, gx) {
+  const sb = (bw && bw.second_brain) || {}, pl = (bw && bw.pipeline) || {}, nr = (bw && bw.neural) || {};
+  const lines = (live && Array.isArray(live.agent_status_lines)) ? live.agent_status_lines : [];
+  const finds = (gx && Array.isArray(gx.finds)) ? gx.finds.slice() : [];
+  finds.sort((a, b) => num(b.score) - num(a.score) || num(b.mentions) - num(a.mentions));
+  const liveAge = ageSec(live && live.updated_iso);
+  const brainAge = ageSec(null, nr.newest_ts || sb.newest_ts);
+  const gxAge = ageSec(gx && gx.scanned_at_iso);
+  const ages = [liveAge, brainAge].filter((x) => x != null);
+  const dataAge = live ? liveAge : (ages.length ? Math.min.apply(null, ages) : null); // freshness is driven by the live feed
+  return {
+    ok: !!(bw || live || gx), haveBW: !!bw, haveLive: !!live, haveGX: !!gx,
+    notes: num(sb.notes), folders: num(sb.folders), links: num(sb.links), topics: num(sb.topics), attention: num(sb.attention), rules: num(sb.rules),
+    nodes: num(nr.nodes), agentsGraph: num(nr.agents), memory: num(nr.memory),
+    open: num(pl.open), decided: num(pl.decided), decisions: num(pl.decisions), gate: pl.gate == null ? null : num(pl.gate), gapS: pl.median_gap_s == null ? null : num(pl.median_gap_s),
+    questions: num(pl.questions), cases: Array.isArray(pl.cases) ? pl.cases.length : 0,
+    agents: lines.length, agentsLive: lines.filter((l) => l && l.line && l.line !== "private").length,
+    agentNames: lines.filter((l) => l && l.line && l.line !== "private").map((l) => prettyId(l.id)),
+    finds: finds.slice(0, 5).map((f) => ({ ticker: String(f.ticker || "").replace(/[^A-Za-z0-9$]/g, "").slice(0, 12), score: num(f.score), mentions: num(f.mentions), authors: num(f.authors) })).filter((f) => f.ticker),
+    gxAge, liveAge, brainAge, dataAge,
+    stale: dataAge == null ? true : dataAge > DAY,
+  };
+}
+let dataPromise = null;
+async function loadData() {
+  const [bw, live, gx] = await Promise.all([getJSON(URL_BW), getJSON(URL_LIVE), getJSON(URL_GX)]);
+  const d = summarize(bw, live, gx);
+  if (d.ok) { try { localStorage.setItem("zero.cache.v1", JSON.stringify({ bw, live: live && { updated_iso: live.updated_iso, agent_status_lines: live.agent_status_lines }, gx: gx && { scanned_at_iso: gx.scanned_at_iso, finds: gx.finds && gx.finds.slice(0, 8).map((f) => ({ ticker: f.ticker, score: f.score, mentions: f.mentions, authors: f.authors })) } })); } catch (e) {} }
+  else { try { const c = JSON.parse(localStorage.getItem("zero.cache.v1") || "null"); if (c) { const dd = summarize(c.bw, c.live, c.gx); dd.cached = true; return dd; } } catch (e) {} }
+  return d;
+}
+function applyData(d) {
+  Z.data = d; Z.stale = !!d.stale; Z.fresh = d.ok && !d.stale;
+  const root = document.documentElement.style;
+  root.setProperty("--glow", Z.stale || !d.ok ? "#FF3B7A" : "#2DD4FF");
+  $("stText").textContent = !d.ok ? "OFFLINE" : (Z.stale ? "STALE · " + ageShort(d.dataAge) : "ONLINE") + (d.cached ? " · cached" : "");
+  $("hNotes").textContent = d.haveBW || d.cached ? d.notes : "--"; $("hOpen").textContent = d.haveBW || d.cached ? d.open : "--";
+  $("hAgents").textContent = d.agents || "--"; $("hAge").textContent = ageShort(d.dataAge);
+  if (Z.onState) Z.onState();
+}
+function refresh() { dataPromise = loadData().then((d) => { applyData(d); return d; }); return dataPromise; }
+
+/* ---------- voice out ---------- */
+const synth = ("speechSynthesis" in window) ? window.speechSynthesis : null;
+let voice = null;
+function pickVoice() {
+  if (!synth) return;
+  const vs = synth.getVoices().filter((v) => /^en/i.test(v.lang));
+  if (!vs.length) return;
+  const prefs = [/daniel/i, /arthur/i, /aaron/i, /rishi/i, /oliver/i, /gordon/i, /fred/i, /alex/i, /google uk english male/i, /\bmale\b/i, /david|mark|james|george|guy|ryan|thomas/i];
+  for (const p of prefs) { const v = vs.find((x) => p.test(x.name)); if (v) { voice = v; return; } }
+  voice = vs.find((v) => /en-GB/i.test(v.lang)) || vs.find((v) => /en-US/i.test(v.lang)) || vs[0];
+}
+if (synth) { pickVoice(); try { synth.addEventListener("voiceschanged", pickVoice); } catch (e) { synth.onvoiceschanged = pickVoice; } }
+
+let speakTok = 0;
+function sentences(t) { return (t.match(/[^.!?]+[.!?]*/g) || [t]).map((s) => s.trim()).filter(Boolean); }
+function setExpr(e) { Z.expr = e || "neutral"; if (Z.onExpr) Z.onExpr(Z.expr); }
+function speakText(text, expr, opts) {
+  opts = opts || {};
+  const tok = ++speakTok;
+  setExpr(expr);
+  if (!opts.noBubble) bubble(text, opts.actions);
+  const start = () => { Z.speaking = true; stage.classList.add("talking"); };
+  const stop = () => { if (tok === speakTok) { Z.speaking = false; stage.classList.remove("talking"); Z.pulse = 0; } };
+  if (!synth || Z.muted || !Z.woke) {            // silent mode: still animate the jaw for roughly the reading time
+    Z.simTalkUntil = performance.now() + Math.min(9000, text.length * 55); start();
+    setTimeout(() => { if (tok === speakTok && performance.now() >= Z.simTalkUntil - 50) stop(); }, Math.min(9000, text.length * 55) + 60);
+    return;
+  }
+  try { synth.cancel(); } catch (e) {}
+  const parts = sentences(text);
+  parts.forEach((s, i) => {
+    const u = new SpeechSynthesisUtterance(s);
+    if (voice) { u.voice = voice; u.lang = voice.lang; } else u.lang = "en-GB";
+    u.pitch = 0.62; u.rate = 0.96; u.volume = 1;
+    u.onstart = () => { if (tok === speakTok) start(); };
+    u.onboundary = (ev) => { if (tok === speakTok && (!ev.name || ev.name === "word")) Z.pulse = 1; };
+    u.onend = () => { if (i === parts.length - 1) stop(); };
+    u.onerror = () => { if (i === parts.length - 1) stop(); };
+    synth.speak(u);
+  });
+  Z.simTalkUntil = performance.now() + 400; // covers the gap before onstart; real speech keeps `speaking` true
+  start();
+  setTimeout(() => { if (tok === speakTok && synth && !synth.speaking && !synth.pending) stop(); }, 1500);
+}
+/* unlock iOS audio inside a user gesture */
+function unlockAudio() {
+  if (Z.woke) return;
+  Z.woke = true; $("wake").classList.add("hide");
+  if (synth) { try { const u = new SpeechSynthesisUtterance(" "); u.volume = 0; synth.speak(u); } catch (e) {} }
+}
+
+/* ---------- bubble ---------- */
+function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+function bubble(text, actions) {
+  const b = $("bubble"); b.classList.add("show");
+  b.innerHTML = '<div class="panel"><span class="who">ZERO</span>' + esc(text) + '<div class="acts"></div></div>';
+  const acts = b.querySelector(".acts");
+  (actions || []).forEach((a) => {
+    const el = document.createElement(a.href ? "a" : "button");
+    el.className = "btn" + (a.ghost ? " ghost" : ""); el.textContent = a.label;
+    if (a.href) { el.href = a.href; } else el.addEventListener("click", a.fn);
+    acts.appendChild(el);
+  });
+  if (!actions || !actions.length) acts.remove();
+}
+function userBubble(t) { /* echo of what Zero heard goes in the input placeholder to keep the dock small */ $("q").value = ""; $("q").placeholder = "“" + t.slice(0, 60) + "”"; }
+
+/* ---------- greeting ---------- */
+function daypart() { const h = new Date().getHours(); return h < 5 ? "Late night" : h < 12 ? "Morning" : h < 17 ? "Afternoon" : "Evening"; }
+function radarPhrase(d) {
+  if (!d.haveGX) return "X Radar is unreachable";
+  return d.gxAge > DAY ? "X Radar is " + ageWords(d.gxAge) + " stale" : "X Radar is fresh, scanned " + ageWords(d.gxAge) + " ago";
+}
+function greetingText(d) {
+  const head = daypart() + ", Jerome. Zero online.";
+  if (!d || !d.ok) return head + " I can't reach my data feeds right now.";
+  const bits = [];
+  if (d.haveLive) bits.push(d.agents + " agents online");
+  if (d.haveGX) bits.push(radarPhrase(d));
+  else if (d.haveBW) bits.push(d.notes + " notes in the second brain");
+  return head + (bits.length ? " " + bits.join(", ") + "." : "");
+}
+let greeted = false;
+function greet() {
+  if (greeted) return; greeted = true;
+  unlockAudio();
+  const d = Z.data;
+  if (d) { speakText(greetingText(d), Z.stale ? "sleepy" : "happy"); return; }
+  speakText("Zero online.", "neutral");                      // inside the gesture; the details follow when data lands
+  (dataPromise || refresh()).then((dd) => { setTimeout(() => speakText(greetingText(dd), Z.stale ? "sleepy" : "happy"), 900); });
+}
+
+/* ---------- local intents (public data only) ---------- */
+const JOKES = [
+  "Why did the skull stay calm in the visor? It had nothing to lose, only bones to pick.",
+  "I tried to tell a UDP joke. I'm not sure you got it.",
+  "There are ten kinds of people: those who read binary and those who don't. I only read zeros, obviously.",
+  "I'm an astronaut with a skull for a face. Honestly, it's still better than most stand-up crews.",
+  "Why do agents never get lost? They always have a good routing table.",
+  "A byte walks into a bar and says, make mine a double. Bartender says, you're already eight.",
+  "Space is great, but there's no atmosphere. Also no Wi-Fi. Zero bars, as promised.",
+];
+let jokeI = Math.floor(Math.random() * JOKES.length);
+let pending = null; // an unanswered question awaiting the user's yes/no
+const R = (text, expr, extra) => Object.assign({ text, expr: expr || "neutral" }, extra || {});
+
+function answer(raw) {
+  const t = " " + raw.toLowerCase().replace(/[^a-z0-9$%&?' ]+/g, " ").replace(/\s+/g, " ").trim() + " ";
+  const has = (re) => re.test(t);
+  const d = Z.data;
+  const nodata = () => R("I can't reach my data feeds right now. Try again in a moment.", "think");
+
+  if (has(/ (p&l|pnl|profit|loss|balance|account|wallet|position|positions|holdings|portfolio|net worth|robinhood|password|passcode|bank|card) /))
+    return R("That's private. I only read public data: counts, status and the X Radar. No money, accounts or contacts.", "alert");
+  if (has(/ (buy|sell|place an order|place a trade|execute|trade for me|make a trade|short it|go long) /))
+    return R("I can't place trades. I'm research only, and nothing I do here touches an order.", "alert");
+
+  if (has(/ (joke|funny|make me laugh|laugh) /)) { const j = JOKES[jokeI++ % JOKES.length]; return R(j, "joke"); }
+  if (has(/ (who are you|your name|what are you|who is zero) /)) return R("I'm Zero, the face of your Brain agent. Black suit, neon skull, public data only.", "happy");
+  if (has(/ (thanks|thank you|cheers|nice one|good job|well done) /)) return R("Anytime, Jerome.", "happy");
+  if (has(/ (how are you|how.s it going|how do you feel|you ok|you okay) /)) return R(Z.stale ? "A little sleepy. My data is stale, but I'm running." : "Running clean and glowing cyan. Thanks for asking.", Z.stale ? "sleepy" : "happy");
+  if (has(/ (hello|hi|hey|yo|good morning|good evening|good afternoon|sup) /) && t.trim().split(" ").length <= 4) return R(daypart() + ", Jerome. Zero here. What do you need?", "happy");
+  if (has(/ (bye|goodbye|see you|goodnight|good night|later) /)) return R("Signing off. I'll keep the visor lit.", "sleepy");
+  if (has(/ (what time|the time|time is it|what.s the date|what day|today.s date) /)) { const n = new Date(); return R("It's " + n.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) + " on " + n.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" }) + ".", "neutral"); }
+  if (has(/ (help|what can you do|commands|options) /)) return R("Ask me for status, how your agents are, what's hot on the X Radar, brain notes, or the pipeline. I can tell a joke, too.", "happy");
+  if (has(/ (love you|you.re cool|awesome|amazing) /)) return R("Careful, you'll make my visor blush. Pink is for stale data only.", "happy");
+
+  if (!d) return nodata();
+  if (has(/ (agent|agents|roster|team|crew) /)) {
+    if (!d.haveLive) return R("I can't see the agent feed right now.", "think");
+    const priv = d.agents - d.agentsLive;
+    return R(d.agents + " agents on the roster. " + d.agentsLive + " reporting in public" + (priv ? ", " + priv + " keeping their status private" : "") + (d.agentNames.length ? ": " + d.agentNames.join(", ") + "." : ".") + " Feed is " + (d.liveAge > DAY ? ageWords(d.liveAge) + " old." : "fresh, " + ageWords(d.liveAge) + " old."), d.stale ? "sleepy" : "happy");
+  }
+  if (has(/ (x radar|radar|hot|trending|top coin|best coin|coin|coins|ticker|tickers|gem|gems|what.s hot|movers) /)) {
+    if (!d.haveGX || !d.finds.length) return R("I can't see the X Radar scan right now.", "think");
+    const f = d.finds, top = f[0];
+    const rest = f.slice(1, 3).map((x) => x.ticker).join(" and ");
+    const note = d.gxAge > DAY ? " Heads up: that scan is " + ageWords(d.gxAge) + " old." : "";
+    return R("Top of the X Radar is " + top.ticker + ", score " + top.score + ", " + top.mentions + " mentions from " + top.authors + " authors." + (rest ? " Next up: " + rest + "." : "") + note + " Research only, not a signal.", d.gxAge > DAY ? "think" : "alert");
+  }
+  if (has(/ (notes|note|second brain|knowledge|topics|folders) /)) {
+    if (!d.haveBW) return nodata();
+    return R(d.notes + " notes across " + d.folders + " folders, " + d.topics + " topics and " + d.links + " links." + (d.attention ? " " + d.attention + " items are flagged for attention." : ""), "think");
+  }
+  if (has(/ (pipeline|decision|decisions|gate|review|queue|open items) /)) {
+    if (!d.haveBW) return nodata();
+    return R("Pipeline has " + d.open + " open and " + d.decided + " decided, out of " + d.decisions + " runs." + (d.gate != null ? " Gate rate " + Math.round(d.gate * 100) + " percent." : "") + (d.gapS ? " Median gap " + (d.gapS < 3600 ? Math.round(d.gapS / 60) + " minutes" : (d.gapS / 3600).toFixed(1) + " hours") + "." : ""), "think");
+  }
+  if (has(/ (neural|nodes|graph|memory|memories) /)) {
+    if (!d.haveBW) return nodata();
+    return R("The neural map has " + d.nodes + " nodes, " + d.links + " links, " + d.agentsGraph + " agents and " + d.memory + " memories.", "think");
+  }
+  if (has(/ (status|report|update|summary|sitrep|brief|overview|how.s everything|how are things|what.s up|whats up|online) /)) {
+    const bits = [];
+    if (d.haveLive) bits.push(d.agents + " agents online");
+    if (d.haveBW) bits.push(d.notes + " notes", d.open + " open");
+    bits.push(radarPhrase(d));
+    return R((Z.stale ? "Running, but my data is " + ageWords(d.dataAge) + " old. " : "All systems glowing. ") + bits.join(", ") + ".", Z.stale ? "sleepy" : "happy");
+  }
+  return null;
+}
+
+function handle(raw) {
+  raw = (raw || "").trim().slice(0, 240);
+  if (!raw) return;
+  userBubble(raw);
+  unlockAudio();
+  const low = " " + raw.toLowerCase().replace(/[^a-z ]+/g, "").trim() + " ";
+  if (pending) {
+    if (/ (yes|yeah|yep|sure|ok|okay|do it|please|go ahead|confirm) /.test(low)) return confirmAsk();
+    if (/ (no|nope|nah|cancel|never mind|nevermind|don.t|dont) /.test(low)) { pending = null; return speakText("Okay, dropped it.", "neutral"); }
+    pending = null;
+  }
+  const a = (dataPromise && !Z.data) ? null : answer(raw);
+  if (a === null && !Z.data && dataPromise) { dataPromise.then(() => handle(raw)); return; }
+  if (a) { speakText(a.text, a.expr); return; }
+  pending = { q: raw };
+  speakText("I can't answer that locally. Want me to ask your Brain agent?", "think", {
+    actions: [{ label: "Yes", fn: () => confirmAsk() }, { label: "No", ghost: true, fn: () => { pending = null; speakText("Okay, dropped it.", "neutral"); } }],
+  });
+}
+/* Relay: NOT used from this page. The app's signed relay needs an HMAC key derived (HKDF) from the Desk key, which only exists in
+   memory after the passcode unlock inside the app. A standalone page can't get it without asking for the passcode or embedding a
+   secret, so Zero hands the question over to the in-app Chat instead. Nothing is sent from here. */
+function confirmAsk() {
+  const q = pending && pending.q; pending = null;
+  try { if (q && navigator.clipboard) navigator.clipboard.writeText(q); } catch (e) {}
+  speakText("I can't send that from here. The relay needs your Desk passcode, which I never touch. Open Chat in the app and message Brain." + (q ? " I copied your question." : ""), "think", {
+    actions: [{ label: "Open Chat", href: BASE + "chat" }],
+  });
+}
+
+/* ---------- input: text + hold-to-talk ---------- */
+$("send").addEventListener("click", () => { const v = $("q").value; $("q").blur(); handle(v); });
+$("q").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); const v = $("q").value; $("q").blur(); handle(v); } });
+$("mute").addEventListener("click", () => {
+  Z.muted = !Z.muted; $("mute").setAttribute("aria-pressed", String(Z.muted)); $("mute").textContent = Z.muted ? "🔇" : "🔊";
+  if (Z.muted && synth) try { synth.cancel(); } catch (e) {}
+});
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null, recText = "", recActive = false;
+const mic = $("mic");
+function micStart(e) {
+  e.preventDefault();
+  unlockAudio();
+  if (!SR) { bubble("Voice input isn't supported in this browser. Type your question instead.", null); $("q").focus(); return; }
+  if (recActive) return;
+  try { if (synth) synth.cancel(); } catch (e2) {}
+  recText = ""; recActive = true; mic.classList.add("rec"); setExpr("alert");
+  try { mic.setPointerCapture && e.pointerId != null && mic.setPointerCapture(e.pointerId); } catch (e3) {}
+  rec = new SR(); rec.lang = "en-US"; rec.interimResults = true; rec.continuous = false; rec.maxAlternatives = 1;
+  rec.onresult = (ev) => { let s = ""; for (let i = 0; i < ev.results.length; i++) s += ev.results[i][0].transcript; recText = s; $("q").placeholder = "“" + s.slice(0, 60) + "”"; };
+  rec.onerror = (ev) => {
+    recActive = false; mic.classList.remove("rec");
+    const m = ev.error === "not-allowed" || ev.error === "service-not-allowed" ? "Mic access is blocked here. In Safari, allow the microphone and turn on Dictation. Or type your question." : ev.error === "no-speech" ? "I didn't hear anything. Hold the mic while you speak." : "Voice input hit a snag (" + ev.error + "). Type your question instead.";
+    speakText(m, "think"); $("q").focus();
+  };
+  rec.onend = () => { mic.classList.remove("rec"); const was = recActive; recActive = false; if (was || recText) { if (recText.trim()) handle(recText); else if (was) { setExpr("neutral"); } } };
+  try { rec.start(); } catch (err) { recActive = false; mic.classList.remove("rec"); bubble("Couldn't start the mic. Type your question instead.", null); }
+}
+function micStop(e) { if (e) e.preventDefault(); if (rec && recActive) { try { rec.stop(); } catch (er) {} } else mic.classList.remove("rec"); }
+mic.addEventListener("pointerdown", micStart);
+mic.addEventListener("pointerup", micStop); mic.addEventListener("pointercancel", micStop); mic.addEventListener("lostpointercapture", micStop);
+mic.addEventListener("contextmenu", (e) => e.preventDefault());
+if (!SR) { mic.style.opacity = ".55"; mic.title = "Voice input isn't supported here, type instead"; }
+
+/* ---------- waveform (2D) ---------- */
+const wv = $("wave"), wctx = wv.getContext("2d");
+function drawWave(t) {
+  const w = wv.width, h = wv.height; wctx.clearRect(0, 0, w, h);
+  const col = getComputedStyle(document.documentElement).getPropertyValue("--glow").trim() || "#2DD4FF";
+  const amp = Z.talk, n = 64;
+  wctx.lineWidth = 2; wctx.strokeStyle = col; wctx.shadowColor = col; wctx.shadowBlur = 8; wctx.beginPath();
+  for (let i = 0; i <= n; i++) {
+    const x = (i / n) * w, env = Math.sin((i / n) * Math.PI);
+    const y = h / 2 + Math.sin(i * 0.55 + t * 0.014) * Math.sin(i * 0.21 - t * 0.009) * (h * 0.42) * env * (0.06 + amp * 0.94);
+    i ? wctx.lineTo(x, y) : wctx.moveTo(x, y);
+  }
+  wctx.stroke();
+  if (amp > 0.05) { wctx.globalAlpha = 0.4; wctx.beginPath(); for (let i = 0; i <= n; i++) { const x = (i / n) * w; const y = h / 2 + Math.cos(i * 0.8 - t * 0.02) * (h * 0.3) * Math.sin((i / n) * Math.PI) * amp; i ? wctx.lineTo(x, y) : wctx.moveTo(x, y); } wctx.strokeStyle = "#FF3B7A"; wctx.shadowColor = "#FF3B7A"; wctx.stroke(); wctx.globalAlpha = 1; }
+}
+
+/* ---------- talk amplitude (shared by DOM + 3D) ---------- */
+let tNow = 0;
+function tickShared(ms, dt) {
+  tNow = ms;
+  const active = Z.speaking;
+  Z.pulse = Math.max(0, Z.pulse - dt * 4.5);
+  const target = active ? Math.min(1, 0.28 + 0.5 * Z.pulse + 0.22 * (0.5 + 0.5 * Math.sin(ms * 0.021)) + 0.12 * Math.sin(ms * 0.047)) : 0;
+  Z.talk += (target - Z.talk) * Math.min(1, dt * 18);
+  if (!Z.speaking || (Z.simTalkUntil && ms > Z.simTalkUntil && synth && !synth.speaking && !synth.pending && !Z.muted && Z.woke && false)) {}
+  drawWave(ms);
+  if (!Z.gl) { const g = $("visorGlow"); if (g) g.style.opacity = String(0.4 + Z.talk * 0.55); }
+}
+
+/* ---------- 3D (three.js from CDN; falls back to the still image) ---------- */
+Z.gl = false;
+async function init3D() {
+  const canvas = $("gl");
+  let THREE;
+  try {
+    const probe = document.createElement("canvas");
+    if (!(probe.getContext("webgl2") || probe.getContext("webgl"))) throw new Error("no webgl");
+    THREE = await Promise.race([import("three"), new Promise((_, rej) => setTimeout(() => rej(new Error("three timeout")), 9000))]);
+  } catch (e) { console.warn("3D unavailable, using still image:", e && e.message); return false; }
+  let EffectComposer, RenderPass, UnrealBloomPass, OutputPass;
+  try {
+    [{ EffectComposer }, { RenderPass }, { UnrealBloomPass }, { OutputPass }] = await Promise.all([
+      import("three/addons/postprocessing/EffectComposer.js"), import("three/addons/postprocessing/RenderPass.js"),
+      import("three/addons/postprocessing/UnrealBloomPass.js"), import("three/addons/postprocessing/OutputPass.js")]);
+  } catch (e) { console.warn("bloom unavailable:", e && e.message); }
+
+  const T = THREE;
+  const renderer = new T.WebGLRenderer({ canvas, antialias: false, alpha: true, powerPreference: "high-performance" });
+  let dpr = Math.min(window.devicePixelRatio || 1, 2);
+  renderer.setPixelRatio(dpr);
+  renderer.setClearColor(0x000000, 0);
+  renderer.toneMapping = T.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
+  renderer.outputColorSpace = T.SRGBColorSpace;
+  const scene = new T.Scene();
+  const camera = new T.PerspectiveCamera(36, 1, 0.1, 100);
+  const CYAN = new T.Color(0x2dd4ff), PINK = new T.Color(0xff3b7a), MAG = new T.Color(0xe040fb);
+
+  /* environment: tiny gradient sky with neon blobs -> PMREM for glossy reflections */
+  {
+    const c = document.createElement("canvas"); c.width = 512; c.height = 256; const x = c.getContext("2d");
+    const g = x.createLinearGradient(0, 0, 0, 256); g.addColorStop(0, "#10162a"); g.addColorStop(.5, "#05060b"); g.addColorStop(1, "#0a0710"); x.fillStyle = g; x.fillRect(0, 0, 512, 256);
+    const blob = (px, py, r, col) => { const rg = x.createRadialGradient(px, py, 0, px, py, r); rg.addColorStop(0, col); rg.addColorStop(1, "rgba(0,0,0,0)"); x.fillStyle = rg; x.fillRect(0, 0, 512, 256); };
+    blob(90, 90, 190, "rgba(45,212,255,.8)"); blob(400, 80, 200, "rgba(255,59,122,.75)"); blob(250, 40, 110, "rgba(255,255,255,.45)"); blob(256, 210, 90, "rgba(224,64,251,.35)");
+    const tex = new T.CanvasTexture(c); tex.mapping = T.EquirectangularReflectionMapping; tex.colorSpace = T.SRGBColorSpace;
+    const pm = new T.PMREMGenerator(renderer); scene.environment = pm.fromEquirectangular(tex).texture; tex.dispose(); pm.dispose();
+  }
+  scene.add(new T.AmbientLight(0x34486a, 1.1));
+  const kL = new T.DirectionalLight(0x6fe3ff, 1.6); kL.position.set(-3, 3, 4); scene.add(kL);
+  const kR = new T.DirectionalLight(0xff4d8a, 1.5); kR.position.set(3.5, 1.5, 2.5); scene.add(kR);
+  const rim = new T.DirectionalLight(0xb06bff, 1.2); rim.position.set(0, 2, -4); scene.add(rim);
+
+  /* starfield + nebula (never rotates with the bust) */
+  const stars = (() => {
+    const N = 1400, p = new Float32Array(N * 3), cl = new Float32Array(N * 3);
+    for (let i = 0; i < N; i++) {
+      const r = 25 + Math.random() * 30, th = Math.random() * Math.PI * 2, ph = Math.acos(2 * Math.random() - 1);
+      p.set([r * Math.sin(ph) * Math.cos(th), r * Math.cos(ph), r * Math.sin(ph) * Math.sin(th)], i * 3);
+      const k = Math.random(); const c = k < .6 ? new T.Color(0xffffff) : k < .8 ? CYAN.clone() : PINK.clone(); c.multiplyScalar(0.5 + Math.random() * 0.8); cl.set([c.r, c.g, c.b], i * 3);
+    }
+    const g = new T.BufferGeometry(); g.setAttribute("position", new T.BufferAttribute(p, 3)); g.setAttribute("color", new T.BufferAttribute(cl, 3));
+    const m = new T.PointsMaterial({ size: 0.16, vertexColors: true, sizeAttenuation: true, transparent: true, depthWrite: false, blending: T.AdditiveBlending, toneMapped: false });
+    const pts = new T.Points(g, m); pts.renderOrder = -10; scene.add(pts); return pts;
+  })();
+  function nebula(col, x, y, z, s, a) {
+    const c = document.createElement("canvas"); c.width = c.height = 128; const cx = c.getContext("2d");
+    const rg = cx.createRadialGradient(64, 64, 0, 64, 64, 64); rg.addColorStop(0, col); rg.addColorStop(1, "rgba(0,0,0,0)"); cx.fillStyle = rg; cx.fillRect(0, 0, 128, 128);
+    const sp = new T.Sprite(new T.SpriteMaterial({ map: new T.CanvasTexture(c), transparent: true, opacity: a, depthWrite: false, blending: T.AdditiveBlending, toneMapped: false }));
+    sp.position.set(x, y, z); sp.scale.set(s, s, 1); sp.renderOrder = -9; scene.add(sp); return sp;
+  }
+  nebula("rgba(45,120,255,1)", -14, 4, -22, 26, 0.22); nebula("rgba(224,64,251,1)", 15, -2, -24, 30, 0.2); nebula("rgba(45,212,255,1)", 4, 10, -26, 20, 0.12);
+
+  /* ---- Zero ---- */
+  const zero = new T.Group(); scene.add(zero);
+  const body = new T.Group(); zero.add(body);        // breathing / bob target
+  const head = new T.Group(); head.position.set(0, 1.05, 0); body.add(head);
+
+  const suit = new T.MeshPhysicalMaterial({ color: 0x0d1018, metalness: 0.85, roughness: 0.38, clearcoat: 0.6, clearcoatRoughness: 0.3, envMapIntensity: 1.1 });
+  const suit2 = new T.MeshPhysicalMaterial({ color: 0x131722, metalness: 0.8, roughness: 0.5, envMapIntensity: 0.9 });
+  const bm = (c, k, extra) => { const m = new T.MeshBasicMaterial(Object.assign({ toneMapped: false }, extra || {})); m.color.setRGB(c.r * k, c.g * k, c.b * k); return m; };
+  const neon = (c) => bm(c, 1.25);
+  const neonC = neon(CYAN), neonP = neon(PINK);
+  const tube = (pts, mat, r) => { const m = new T.Mesh(new T.TubeGeometry(new T.CatmullRomCurve3(pts), pts.length * 6, r || 0.014, 6, false), mat); return m; };
+
+  // helmet
+  const helmet = new T.Mesh(new T.SphereGeometry(1, 64, 48), suit); head.add(helmet);
+  // visor dome (glossy dark glass)
+  const visorMat = new T.MeshPhysicalMaterial({ color: 0x03050a, metalness: 0.2, roughness: 0.04, clearcoat: 1, clearcoatRoughness: 0.02, transparent: true, opacity: 0.78, envMapIntensity: 2.2, emissive: CYAN.clone(), emissiveIntensity: 0.04, depthWrite: false });
+  const visor = new T.Mesh(new T.SphereGeometry(1, 48, 36), visorMat); visor.scale.set(0.80, 0.72, 0.75); visor.position.set(0, 0.0, 0.45); visor.renderOrder = 5; head.add(visor);
+  // visor rim
+  const rimG = new T.Group(); head.add(rimG);
+  {
+    const L = [], Rr = []; for (let i = 0; i <= 40; i++) { const a = Math.PI / 2 + (i / 40) * Math.PI; L.push(new T.Vector3(Math.cos(a) * 0.82, Math.sin(a) * 0.73, 0.63 + Math.cos((a - Math.PI) * 0.5) * 0.06)); }
+    for (let i = 0; i <= 40; i++) { const a = Math.PI / 2 - (i / 40) * Math.PI; Rr.push(new T.Vector3(Math.cos(a) * 0.82, Math.sin(a) * 0.73, 0.63 + Math.cos((a) * 0.5) * 0.06)); }
+    rimG.add(tube(L, neonC, 0.013)); rimG.add(tube(Rr, neonP, 0.013));
+  }
+  // skull textures (re-drawn when expression / state colour changes)
+  const crC = document.createElement("canvas"); crC.width = crC.height = 512; const jwC = document.createElement("canvas"); jwC.width = 512; jwC.height = 256;
+  const crT = new T.CanvasTexture(crC), jwT = new T.CanvasTexture(jwC); crT.colorSpace = jwT.colorSpace = T.SRGBColorSpace; crT.anisotropy = 4;
+  function glowStroke(x, col, w, blur) { x.strokeStyle = col; x.lineWidth = w; x.shadowColor = col; x.shadowBlur = blur; x.lineJoin = x.lineCap = "round"; }
+  function drawSkull(expr) {
+    const A = Z.stale ? "#ff3b7a" : "#2dd4ff", B = Z.stale ? "#e040fb" : "#ff3b7a";
+    const x = crC.getContext("2d"); x.clearRect(0, 0, 512, 512);
+    // cranium
+    const cran = () => { x.beginPath(); x.moveTo(150, 330); x.bezierCurveTo(105, 250, 112, 90, 256, 66); x.bezierCurveTo(400, 90, 407, 250, 362, 330); x.lineTo(338, 372); x.lineTo(174, 372); x.closePath(); };
+    cran(); x.fillStyle = "rgba(20,40,70,.22)"; x.fill();
+    glowStroke(x, A, 7, 22); cran(); x.stroke();
+    glowStroke(x, B, 3, 16); x.beginPath(); x.moveTo(256, 66); x.bezierCurveTo(300, 70, 380, 120, 372, 214); x.stroke();
+    x.beginPath(); x.moveTo(190, 96); x.lineTo(215, 140); x.lineTo(196, 170); x.stroke();            // cracks
+    x.beginPath(); x.moveTo(310, 90); x.lineTo(296, 138); x.lineTo(322, 156); x.stroke();
+    x.shadowBlur = 0; x.fillStyle = "rgba(180,235,255,.65)"; for (let i = 0; i < 46; i++) { const px = 150 + Math.random() * 212, py = 100 + Math.random() * 230; x.fillRect(px, py, 2, 2); } // sparkles in the bone
+    // eyes
+    const eye = (cx, cy, rx, ry, kind, flip) => {
+      x.save(); x.translate(cx, cy);
+      x.beginPath();
+      if (kind === "happy") { x.moveTo(-rx, ry * 0.5); x.quadraticCurveTo(0, -ry * 1.1, rx, ry * 0.5); }
+      else if (kind === "sleepy") { x.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2); }
+      else if (kind === "wink") { x.moveTo(-rx, 0); x.quadraticCurveTo(0, ry * 0.6, rx, 0); }
+      else if (kind === "alert") { x.moveTo(-rx, -ry * .1); x.quadraticCurveTo(0, -ry * 1.4, rx, -ry * .5 * (flip ? -1 : 1) - ry * .2); x.quadraticCurveTo(rx * .6, ry * 1.1, -rx * .2, ry); x.closePath(); }
+      else x.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+      if (kind !== "happy" && kind !== "wink") { x.fillStyle = "rgba(255,59,122,.18)"; x.fill(); }
+      glowStroke(x, B, kind === "happy" || kind === "wink" ? 8 : 6, 20); x.stroke();
+      if (kind === "neutral" || kind === "think" || kind === "alert") { x.shadowBlur = 24; x.fillStyle = B; x.beginPath(); x.arc(0, 0, ry * (kind === "alert" ? 0.34 : 0.22), 0, 7); x.fill(); }
+      if (kind === "sleepy") { x.fillStyle = "rgba(2,3,8,.92)"; x.shadowBlur = 0; x.fillRect(-rx - 4, -ry - 4, rx * 2 + 8, ry * 1.25); glowStroke(x, B, 5, 14); x.beginPath(); x.moveTo(-rx, -ry * .25); x.lineTo(rx, -ry * .25); x.stroke(); }
+      x.restore();
+    };
+    const E = { neutral: ["neutral", "neutral"], happy: ["happy", "happy"], joke: ["happy", "wink"], think: ["neutral", "neutral"], alert: ["alert", "alert"], sleepy: ["sleepy", "sleepy"] }[expr] || ["neutral", "neutral"];
+    const th = expr === "think";
+    eye(205, 236, 44, 46, E[0], false); eye(307, 236 + (th ? -6 : 0), th ? 36 : 44, th ? 36 : 46, E[1], true);
+    if (th) { glowStroke(x, A, 5, 14); x.beginPath(); x.moveTo(262, 180); x.lineTo(350, 162); x.stroke(); }
+    // nose
+    glowStroke(x, A, 5, 16); x.beginPath(); x.moveTo(256, 296); x.lineTo(238, 336); x.lineTo(256, 328); x.lineTo(274, 336); x.closePath(); x.stroke();
+    crT.needsUpdate = true;
+    // jaw
+    const j = jwC.getContext("2d"); j.clearRect(0, 0, 512, 256);
+    j.beginPath(); j.moveTo(172, 4); j.lineTo(340, 4); j.lineTo(326, 70); j.quadraticCurveTo(318, 140, 256, 150); j.quadraticCurveTo(194, 140, 186, 70); j.closePath();
+    j.fillStyle = "rgba(20,40,70,.25)"; j.fill(); glowStroke(j, A, 6, 20); j.stroke();
+    glowStroke(j, B, 3, 14); j.beginPath(); j.moveTo(184, 44); j.lineTo(328, 44); j.stroke();
+    glowStroke(j, A, 3, 12); for (let i = 0; i < 7; i++) { const px = 200 + i * 20.5; j.beginPath(); j.moveTo(px, 6); j.lineTo(px, 44); j.stroke(); for (let k = 0; k < 1; k++) { j.beginPath(); j.moveTo(px, 44); j.lineTo(px + 0, 80 + Math.abs(3 - i) * -6 + 16); j.stroke(); } }
+    jwT.needsUpdate = true;
+  }
+  const bend = (geo, k, z0) => { const p = geo.attributes.position; for (let i = 0; i < p.count; i++) { const x = p.getX(i), y = p.getY(i); p.setZ(i, z0 - k * (x * x + y * y)); } geo.computeVertexNormals(); return geo; };
+  const skullMat = (map) => new T.MeshBasicMaterial({ map, transparent: true, depthWrite: false, blending: T.AdditiveBlending, toneMapped: false, color: 0xffffff });
+  const cranMat = skullMat(crT), jawMat = skullMat(jwT);
+  const cranium = new T.Mesh(bend(new T.PlaneGeometry(1.25, 1.25, 12, 12), 0.4, 1.08), cranMat); cranium.position.set(0, 0.08, 0); cranium.renderOrder = 3; head.add(cranium);
+  const jaw = new T.Mesh(bend(new T.PlaneGeometry(1.25, 0.625, 12, 6), 0.4, 1.08), jawMat); jaw.position.set(0, -0.5, 0); jaw.renderOrder = 3; head.add(jaw);
+  const JAW_Y0 = -0.5;
+  // visor glow sheet (tinted overlay in front of the skull)
+  const glowMat = new T.MeshBasicMaterial({ color: CYAN, transparent: true, opacity: 0.12, blending: T.AdditiveBlending, depthWrite: false, toneMapped: false });
+  const glowSheet = new T.Mesh(new T.SphereGeometry(1, 40, 28), glowMat); glowSheet.scale.set(0.795, 0.715, 0.745); glowSheet.position.set(0, 0, 0.45); glowSheet.renderOrder = 6; head.add(glowSheet);
+
+  // headphones / ear pieces + helmet neon
+  for (const s of [-1, 1]) {
+    const ear = new T.Mesh(new T.CylinderGeometry(0.27, 0.27, 0.2, 28), suit2); ear.rotation.z = Math.PI / 2; ear.position.set(s * 1.0, -0.02, -0.05); head.add(ear);
+    const ring = new T.Mesh(new T.TorusGeometry(0.22, 0.016, 8, 40), s < 0 ? neonC : neonP); ring.rotation.y = Math.PI / 2; ring.position.set(s * 1.115, -0.02, -0.05); head.add(ring);
+    const arm = new T.Mesh(new T.CylinderGeometry(0.03, 0.03, 0.5, 8), suit2); arm.position.set(s * 0.98, 0.38, 0.0); arm.rotation.z = s * 0.12; head.add(arm);
+  }
+  const hs = (lon, lat) => new T.Vector3(Math.cos(lat) * Math.sin(lon), Math.sin(lat), Math.cos(lat) * Math.cos(lon)).multiplyScalar(1.012);
+  const line = (fn, a, b, n) => Array.from({ length: n + 1 }, (_, i) => fn(a + (b - a) * i / n));
+  head.add(tube(line((l) => hs(-0.95, l), 0.35, 1.45, 22), neonC, 0.016));
+  head.add(tube(line((l) => hs(0.95, l), 0.35, 1.45, 22), neonP, 0.016));
+  head.add(tube(line((l) => hs(l, 1.12), -0.8, 0.8, 22), neonC, 0.014));
+  head.add(tube(line((l) => hs(l, 1.12), 2.2, 3.6, 22), neonP, 0.014));
+  head.add(tube(line((l) => hs(-0.45 + l * 0.0, l), 0.9, 1.5, 12).map((v) => v), neonP, 0.012));
+  // back of helmet lines (for spinning)
+  head.add(tube(line((l) => hs(l, 0.15), 2.3, 4.0, 30), neonC, 0.014));
+
+  // neck + torso
+  const neck = new T.Mesh(new T.CylinderGeometry(0.46, 0.55, 0.5, 28), suit2); neck.position.set(0, 0.0, 0); body.add(neck);
+  const neckRing = new T.Mesh(new T.TorusGeometry(0.5, 0.02, 8, 48), neonC); neckRing.rotation.x = Math.PI / 2; neckRing.position.set(0, 0.2, 0); body.add(neckRing);
+  const chest = new T.Group(); body.add(chest);
+  const TC = new T.Vector3(0, -0.9, 0), TR = new T.Vector3(1.75, 1.05, 0.95);
+  const torso = new T.Mesh(new T.SphereGeometry(1, 64, 40), suit); torso.scale.copy(TR); torso.position.copy(TC); chest.add(torso);
+  const ts = (lon, lat) => new T.Vector3(TR.x * Math.cos(lat) * Math.sin(lon), TC.y + TR.y * Math.sin(lat), TR.z * Math.cos(lat) * Math.cos(lon)).multiplyScalar(1.02).add(new T.Vector3(0, TC.y * -0.02, 0));
+  for (const s of [-1, 1]) {
+    const pad = new T.Mesh(new T.SphereGeometry(1, 36, 24), suit2); pad.scale.set(0.62, 0.5, 0.62); pad.position.set(s * 1.52, -0.38, -0.02); pad.rotation.z = s * -0.35; chest.add(pad);
+    const padRing = new T.Mesh(new T.TorusGeometry(0.55, 0.018, 8, 40), s < 0 ? neonC : neonP); padRing.scale.set(1, 0.85, 1); padRing.position.set(s * 1.52, -0.38, -0.02); padRing.rotation.set(0, s * Math.PI / 2.4, 0); chest.add(padRing);
+    chest.add(tube(line((l) => ts(s * l, 0.62), 0.25, 1.1, 18), s < 0 ? neonC : neonP, 0.022));
+    chest.add(tube(line((l) => ts(s * 0.42, l), -0.35, 0.58, 14), s < 0 ? neonP : neonC, 0.022));
+    chest.add(tube(line((l) => ts(s * 0.95, l), -0.45, 0.45, 14), s < 0 ? neonC : neonP, 0.02));
+  }
+  chest.add(tube(line((l) => ts(l, -0.4), -1.0, 1.0, 26), neonP, 0.02));
+  // chest badge ("ZERO")
+  const bC = document.createElement("canvas"); bC.width = 512; bC.height = 180; const bx = bC.getContext("2d");
+  bx.fillStyle = "#050c14"; bx.fillRect(0, 0, 512, 180);
+  const gr = bx.createLinearGradient(0, 0, 512, 0); gr.addColorStop(0, "#2dd4ff"); gr.addColorStop(.5, "#2dd4ff"); gr.addColorStop(.55, "#ff3b7a"); gr.addColorStop(1, "#ff3b7a");
+  bx.strokeStyle = gr; bx.lineWidth = 10; bx.shadowColor = "#2dd4ff"; bx.shadowBlur = 16; bx.beginPath(); bx.moveTo(30, 8); bx.lineTo(482, 8); bx.lineTo(504, 30); bx.lineTo(504, 150); bx.lineTo(482, 172); bx.lineTo(30, 172); bx.lineTo(8, 150); bx.lineTo(8, 30); bx.closePath(); bx.stroke();
+  bx.font = "italic 800 104px 'Exo 2','Arial Black',system-ui,sans-serif"; bx.textAlign = "center"; bx.textBaseline = "middle"; bx.fillStyle = "#e6fbff"; bx.shadowColor = "#2dd4ff"; bx.shadowBlur = 22; bx.fillText("ZERO", 256, 94);
+  const bT = new T.CanvasTexture(bC); bT.colorSpace = T.SRGBColorSpace;
+  const badge = new T.Mesh(new T.PlaneGeometry(0.78, 0.274), new T.MeshBasicMaterial({ map: bT, toneMapped: false }));
+  badge.position.set(0, -0.62, 0.965); badge.rotation.x = -0.3; chest.add(badge);
+
+  // holographic HUD rings
+  const ringTex = (() => {
+    const c = document.createElement("canvas"); c.width = c.height = 1024; const x = c.getContext("2d"); x.translate(512, 512); x.lineCap = "round"; x.shadowBlur = 14;
+    const arc = (r, a0, a1, w, col) => { x.strokeStyle = col; x.shadowColor = col; x.lineWidth = w; x.beginPath(); x.arc(0, 0, r, a0, a1); x.stroke(); };
+    for (let i = 0; i < 4; i++) arc(470, i * Math.PI / 2 + 0.12, i * Math.PI / 2 + 1.3, 6, i % 2 ? "#ff3b7a" : "#2dd4ff");
+    for (let i = 0; i < 72; i++) { const a = i / 72 * Math.PI * 2, l = i % 6 === 0 ? 34 : 14; x.strokeStyle = i % 6 === 0 ? "#2dd4ff" : "rgba(45,212,255,.55)"; x.shadowColor = "#2dd4ff"; x.lineWidth = i % 6 === 0 ? 4 : 2; x.beginPath(); x.moveTo(Math.cos(a) * 430, Math.sin(a) * 430); x.lineTo(Math.cos(a) * (430 - l), Math.sin(a) * (430 - l)); x.stroke(); }
+    arc(380, 0.3, 2.4, 3, "rgba(255,59,122,.9)"); arc(380, 3.6, 5.4, 3, "rgba(45,212,255,.9)"); arc(330, 0, Math.PI * 2, 1.5, "rgba(45,212,255,.35)");
+    x.fillStyle = "#2dd4ff"; x.font = "bold 24px ui-monospace,monospace"; x.textAlign = "center"; x.shadowBlur = 8; x.fillText("Z E R O  ·  L I N K", 0, -486 + 0);
+    const t = new T.CanvasTexture(c); t.colorSpace = T.SRGBColorSpace; t.anisotropy = 4; return t;
+  })();
+  const ringMat = (op) => new T.MeshBasicMaterial({ map: ringTex, transparent: true, opacity: op, blending: T.AdditiveBlending, depthWrite: false, side: T.DoubleSide, toneMapped: false });
+  const hudBack = new T.Mesh(new T.PlaneGeometry(4.0, 4.0), ringMat(0.55)); hudBack.position.set(0, 1.05, -0.9); hudBack.renderOrder = -1; body.add(hudBack);
+  const hudRingMat = ringMat(0.6);
+  const hudFlat = new T.Mesh(new T.RingGeometry(1.55, 1.62, 96), bm(CYAN, 1.4, { transparent: true, opacity: 0.5, side: T.DoubleSide, depthWrite: false, blending: T.AdditiveBlending }));
+  hudFlat.rotation.x = Math.PI / 2 - 0.25; hudFlat.position.set(0, 0.85, 0); body.add(hudFlat);
+  const hudFlat2 = new T.Mesh(new T.RingGeometry(1.8, 1.83, 96, 1, 0, Math.PI * 1.4), bm(PINK, 1.4, { transparent: true, opacity: 0.6, side: T.DoubleSide, depthWrite: false, blending: T.AdditiveBlending }));
+  hudFlat2.rotation.x = Math.PI / 2 - 0.25; hudFlat2.position.set(0, 0.85, 0); body.add(hudFlat2);
+
+  /* ---- tint (state) ---- */
+  const glowCol = new T.Color(CYAN);
+  Z.onState = () => { drawSkull(Z.expr); };
+  Z.onExpr = () => { drawSkull(Z.expr); };
+  drawSkull("neutral");
+  let lastStale = Z.stale;
+
+  /* ---- bloom (cheap: half-res) ---- */
+  let composer = null, bloom = null;
+  if (EffectComposer) {
+    composer = new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene, camera));
+    bloom = new UnrealBloomPass(new T.Vector2(256, 256), 0.6, 0.5, 0.6);
+    composer.addPass(bloom); composer.addPass(new OutputPass());
+  }
+  let useBloom = !!composer;
+
+  /* ---- sizing ---- */
+  let W = 0, H = 0, baseDist = 8;
+  function resize() {
+    W = stage.clientWidth || window.innerWidth; H = stage.clientHeight || window.innerHeight;
+    renderer.setPixelRatio(dpr); renderer.setSize(W, H, false);
+    camera.aspect = W / H; camera.updateProjectionMatrix();
+    if (composer) { composer.setPixelRatio(1); composer.setSize(Math.round(W * dpr), Math.round(H * dpr)); bloom.resolution.set(Math.round(W * dpr / 2), Math.round(H * dpr / 2)); }
+    const fitH = 4.2, fitW = 4.2;  // bust (helmet + shoulders) must fit
+    const vf = camera.fov * Math.PI / 180;
+    baseDist = Math.max(fitH / 2 / Math.tan(vf / 2), (fitW / 2) / (Math.tan(vf / 2) * camera.aspect));
+  }
+  window.addEventListener("resize", resize); window.addEventListener("orientationchange", () => setTimeout(resize, 250));
+  resize();
+
+  /* ---- interaction: drag to spin, pinch / wheel to zoom ---- */
+  let yaw = 0.0, pitch = 0.05, yawV = 0, zoom = 1, lastInteract = -1e9;
+  const ptrs = new Map(); let pinch0 = 0, zoom0 = 1, downT = 0, moved = 0, downX = 0, downY = 0;
+  stage.addEventListener("pointerdown", (e) => {
+    if (e.target.closest && e.target.closest("button,input,a")) return;
+    stage.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (ptrs.size === 1) { downT = performance.now(); moved = 0; downX = e.clientX; downY = e.clientY; }
+    if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinch0 = Math.hypot(a.x - b.x, a.y - b.y); zoom0 = zoom; }
+    lastInteract = performance.now();
+  });
+  stage.addEventListener("pointermove", (e) => {
+    const p = ptrs.get(e.pointerId); if (!p) return;
+    const dx = e.clientX - p.x, dy = e.clientY - p.y; p.x = e.clientX; p.y = e.clientY;
+    if (ptrs.size >= 2) { const [a, b] = [...ptrs.values()]; const d = Math.hypot(a.x - b.x, a.y - b.y); if (pinch0 > 0) zoom = Math.min(2.2, Math.max(0.55, zoom0 * d / pinch0)); moved += 99; }
+    else { yaw += dx * 0.0085; pitch = Math.max(-0.5, Math.min(0.6, pitch + dy * 0.004)); yawV = dx * 0.0085 * 60; moved += Math.abs(dx) + Math.abs(dy); }
+    lastInteract = performance.now();
+  });
+  const up = (e) => { const had = ptrs.delete(e.pointerId); if (had && ptrs.size === 0 && moved < 10 && performance.now() - downT < 450) onTap(); if (ptrs.size < 2) pinch0 = 0; lastInteract = performance.now(); };
+  stage.addEventListener("pointerup", up); stage.addEventListener("pointercancel", up);
+  stage.addEventListener("wheel", (e) => { e.preventDefault(); zoom = Math.min(2.2, Math.max(0.55, zoom * Math.exp(e.deltaY * 0.0012))); lastInteract = performance.now(); }, { passive: false });
+  document.addEventListener("gesturestart", (e) => e.preventDefault());   // stop iOS page zoom
+  document.addEventListener("dblclick", (e) => e.preventDefault());
+
+  /* ---- loop ---- */
+  const reduced = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let last = performance.now(), acc = 0, frames = 0, slow = 0, running = true, shown = false;
+  const tmpC = new T.Color();
+  function frame(ms) {
+    if (!running) return;
+    requestAnimationFrame(frame);
+    let dt = Math.min(0.05, (ms - last) / 1000); last = ms;
+    tickShared(ms, dt);
+    const t = ms / 1000;
+    // adaptive quality
+    acc += dt; frames++;
+    if (acc > 2) { const fps = frames / acc; acc = 0; frames = 0;
+      if (fps < 40) { slow++; if (slow >= 2) { if (useBloom) { useBloom = false; } else if (dpr > 1.1) { dpr = Math.max(1, dpr * 0.75); resize(); } slow = 0; } } else slow = 0; }
+    if (Z.stale !== lastStale) { lastStale = Z.stale; drawSkull(Z.expr); }
+    // state colour + visor pulse
+    const base = Z.stale ? PINK : CYAN;
+    glowCol.lerp(base, Math.min(1, dt * 4));
+    const pulse = 0.5 + 0.5 * Math.sin(t * 2.2);
+    const talk = Z.talk;
+    glowMat.color.copy(glowCol); glowMat.opacity = 0.025 + pulse * 0.03 + talk * 0.2;
+    visorMat.emissive.copy(glowCol); visorMat.emissiveIntensity = 0.015 + pulse * 0.03 + talk * 0.3;
+    { const k = 1.2 + talk * 1.0; neonC.color.setRGB(glowCol.r * k, glowCol.g * k, glowCol.b * k); }
+    cranMat.opacity = 0.85 + pulse * 0.15 + talk * 0.0; jawMat.opacity = cranMat.opacity;
+    cranMat.color.setScalar(1 + talk * 0.9 + pulse * 0.15); jawMat.color.copy(cranMat.color);
+    // idle bob + breathing
+    const br = reduced ? 0 : 1;
+    body.position.y = Math.sin(t * 1.15) * 0.05 * br;
+    const breath = 1 + Math.sin(t * 1.9) * 0.012 * br;
+    chest.scale.set(breath, 1 + Math.sin(t * 1.9) * 0.02 * br, breath);
+    head.rotation.x = Math.sin(t * 0.8) * 0.025 * br + (Z.expr === "think" ? -0.07 : 0) + talk * 0.03;
+    head.rotation.z = (Z.expr === "think" ? 0.1 : Z.expr === "joke" ? -0.06 : 0) + Math.sin(t * 0.6) * 0.01 * br;
+    head.position.y = 1.05 + Math.sin(t * 1.15 + 0.6) * 0.02 * br;
+    // jaw sync
+    const jawOpen = talk * (0.55 + 0.45 * Math.sin(t * 22 + 1)) * 0.5 + (Z.expr === "happy" || Z.expr === "joke" ? 0.03 : 0);
+    jaw.position.y = JAW_Y0 - jawOpen * 0.16; cranium.position.y = 0.08 + jawOpen * 0.01;
+    // rings
+    hudBack.rotation.z = -t * 0.15; hudBack.material.opacity = 0.45 + talk * 0.4 + pulse * 0.08;
+    hudFlat.rotation.z = t * 0.5; hudFlat2.rotation.z = -t * 0.35; hudFlat.position.y = hudFlat2.position.y = 0.85 + Math.sin(t * 1.15) * 0.05;
+    hudFlat.material.opacity = 0.4 + talk * 0.4; hudFlat2.material.opacity = 0.45 + talk * 0.4;
+    stars.rotation.y = t * 0.004; stars.rotation.x = Math.sin(t * 0.05) * 0.03;
+    // rotation: slow auto-rotate unless the user is interacting; face front while speaking
+    const idle = performance.now() - lastInteract > 2500 && ptrs.size === 0;
+    if (!ptrs.size) { yaw += yawV * dt; yawV *= Math.pow(0.04, dt); }
+    if (idle) {
+      if (Z.speaking || Z.talk > 0.05) { const f = Math.round(yaw / (Math.PI * 2)) * Math.PI * 2; yaw += (f - yaw) * Math.min(1, dt * 2.2); }
+      else if (!reduced) yaw += dt * 0.28;
+      pitch += (0.05 - pitch) * Math.min(1, dt * 1.5);
+    }
+    zero.rotation.y = yaw; zero.rotation.x = pitch * 0.6;
+    const dist = baseDist * zoom;
+    camera.position.set(0, 0.55, dist); camera.lookAt(0, 0.45, 0);
+    camera.position.y = 0.55 + pitch * 0.5;
+    if (useBloom && composer) { bloom.strength = 0.38 + talk * 0.4; composer.render(dt); } else renderer.render(scene, camera);
+    if (!shown) { shown = true; stage.classList.add("live"); Z.gl = true; }
+  }
+  document.addEventListener("visibilitychange", () => { if (document.hidden) running = false; else if (!running) { running = true; last = performance.now(); requestAnimationFrame(frame); } });
+  canvas.addEventListener("webglcontextlost", (e) => { e.preventDefault(); running = false; stage.classList.remove("live"); Z.gl = false; });
+  canvas.addEventListener("webglcontextrestored", () => { running = true; last = performance.now(); requestAnimationFrame(frame); });
+  requestAnimationFrame(frame);
+  window.__zeroThree = { renderer, scene, camera, setYaw: (v) => { yaw = v; lastInteract = performance.now() + 1e7; }, setZoom: (z) => { zoom = z; } };
+  return true;
+}
+
+/* ---------- boot ---------- */
+function onTap() { if (!greeted) greet(); }
+// when 3D isn't running, a tap on the page still wakes Zero
+stage.addEventListener("click", () => { if (!Z.gl) onTap(); });
+$("wake").addEventListener("click", onTap);
+document.addEventListener("pointerup", (e) => { if (!greeted && e.target.closest && e.target.closest("#mic")) return; }, true);
+
+window.__zero = { Z, answer, handle, greetingText, summarize, loadData, applyData, greet, speakText, ageWords };
+const rafShared = (() => { let last = performance.now(); return function loop(ms) { if (!Z.gl) { tickShared(ms, Math.min(0.05, (ms - last) / 1000)); } last = ms; requestAnimationFrame(loop); }; })();
+if (!(window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches) || true) requestAnimationFrame(rafShared);
+refresh();
+init3D().then((ok) => { if (!ok) console.info("still-image mode"); }).catch((e) => console.warn("3D error", e));
+if ("serviceWorker" in navigator) { /* intentionally not registering a worker: this page is a plain static page; the app's worker (if any) already covers the scope */ }
+setInterval(() => { if (!document.hidden) refresh(); }, 5 * 60 * 1000);
+</script>
+</body>
+</html>
