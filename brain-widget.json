@@ -1,35 +1,35 @@
 {
  "schema": "brain-widget/1",
- "built_ct": "Oct 23, 8:08 AM",
+ "built_ct": "Oct 27, 9:28 AM",
  "neural": {
-  "nodes": 122,
-  "links": 46,
+  "nodes": 139,
+  "links": 65,
   "agents": 11,
-  "memory": 86,
+  "memory": 95,
   "kinds": {
    "meme": 40,
-   "note": 22,
-   "xradar": 24
+   "note": 29,
+   "xradar": 26
   },
-  "newest_ts": 1792759680
+  "newest_ts": 1793109180
  },
  "second_brain": {
-  "notes": 22,
-  "folders": 3,
-  "links": 46,
+  "notes": 29,
+  "folders": 4,
+  "links": 65,
   "topics": 14,
   "routines": 4,
   "attention": 5,
   "rules": 9,
-  "newest_ts": 1792748787
+  "newest_ts": 1793108928
  },
  "pipeline": {
-  "decisions": 100,
-  "events": 86,
+  "decisions": 109,
+  "events": 95,
   "open": 3,
   "decided": 1,
   "gate": 0.25,
-  "median_gap_s": 10383,
+  "median_gap_s": 10447,
   "questions": 4,
   "cases": [
    {
@@ -46,7 +46,7 @@
    },
    {
     "owner": "Chief of Staff",
-    "route": "quarantine"
+    "route": "review"
    },
    {
     "owner": "Chief of Staff",
