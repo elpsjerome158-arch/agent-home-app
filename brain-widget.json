@@ -1,6 +1,6 @@
 {
  "schema": "brain-widget/1",
- "built_ct": "Oct 27, 6:03 PM",
+ "built_ct": "Oct 27, 6:06 PM",
  "neural": {
   "nodes": 148,
   "links": 79,
@@ -11,7 +11,7 @@
    "meme": 40,
    "xradar": 29
   },
-  "newest_ts": 1793142158
+  "newest_ts": 1793142306
  },
  "second_brain": {
   "notes": 32,
@@ -21,7 +21,7 @@
   "routines": 4,
   "attention": 7,
   "rules": 9,
-  "newest_ts": 1793142158
+  "newest_ts": 1793142306
  },
  "pipeline": {
   "decisions": 115,
