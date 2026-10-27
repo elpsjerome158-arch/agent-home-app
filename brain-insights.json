@@ -1,6 +1,6 @@
 {
  "schema": "brain-insights/1",
- "generated_at": "2026-10-27 00:51:42 CT",
+ "generated_at": "2026-10-27 08:26:53 CT",
  "insights": [
   {
    "text": "All 13 logged setups rejected for ~1.9% spread plus downtrend (P-001–P-019)",
@@ -23,12 +23,12 @@
    "priority": 3
   },
   {
-   "text": "24h: SOL 100.28 (+0.09%), BTC 79,899.1 (+0.45%), ETH 2,317.73 (+0.60%)",
+   "text": "24h: SOL 100.67 (-0.61%), BTC 80,239.9 (+0.14%), ETH 2,328.99 (+0.50%)",
    "source": "brain hub",
    "priority": 3
   },
   {
-   "text": "RSI(14) daily at 2026-10-27 00:51 CT: 9 overbought (AWK, BOXX, EGBN, ISRG, LMT), 25 oversold (BABA, BAC, BTDR, CMG, GE) of 188",
+   "text": "RSI(14) daily at 2026-10-27 04:49 CT: 9 overbought (AWK, BOXX, EGBN, ISRG, LMT), 25 oversold (BABA, BAC, BTDR, CMG, GE) of 188",
    "source": "RSI tracker",
    "priority": 3
   },
@@ -38,7 +38,7 @@
    "priority": 4
   },
   {
-   "text": "Top Meme Scout blocker: 'community_or_tweet_with_community' (4144 of 75692 rows)",
+   "text": "Top Meme Scout blocker: 'community_or_tweet_with_community' (4428 of 80764 rows)",
    "source": "Meme Scout",
    "priority": 4
   }
