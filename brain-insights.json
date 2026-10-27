@@ -1,19 +1,14 @@
 {
  "schema": "brain-insights/1",
- "generated_at": "2026-10-27 08:26:53 CT",
+ "generated_at": "2026-10-27 12:21:07 CT",
  "insights": [
   {
-   "text": "All 13 logged setups rejected for ~1.9% spread plus downtrend (P-001–P-019)",
+   "text": "13 of 14 rejected setups have no decision score (P-002, P-003, P-004, P-005, P-006, P-007, P-009, P-011, P-015, P-016, P-018, P-019, P-020); scheduled cycles don't poll Setup Scout, so Devil's [file] Coach never review",
    "source": "Trade Journal Bot",
    "priority": 1
   },
   {
-   "text": "12 of 13 rejected setups have no decision score (P-002, P-003, P-004, P-005, P-006, P-007, P-009, P-011, P-015, P-016, P-018, P-019); scheduled cycles don't poll Setup Scout, so Devil's [file] Coach never review",
-   "source": "Trade Journal Bot",
-   "priority": 1
-  },
-  {
-   "text": "IT crash log: 16 entries, 0 open",
+   "text": "IT crash log: 21 entries, 1 open (Box files restored around 12:19-12:20 AM CT Oct 27 ([file] logins redone); `/[file]` has no `refs/`, so `git` says \"not a git repository\" in the app source folder)",
    "source": "IT Agent",
    "priority": 2
   },
@@ -23,12 +18,12 @@
    "priority": 3
   },
   {
-   "text": "24h: SOL 100.67 (-0.61%), BTC 80,239.9 (+0.14%), ETH 2,328.99 (+0.50%)",
+   "text": "24h: SOL 101.04 (-1.24%), BTC 80,611.5 (-0.16%), ETH 2,350.23 (+0.48%)",
    "source": "brain hub",
    "priority": 3
   },
   {
-   "text": "RSI(14) daily at 2026-10-27 04:49 CT: 9 overbought (AWK, BOXX, EGBN, ISRG, LMT), 25 oversold (BABA, BAC, BTDR, CMG, GE) of 188",
+   "text": "RSI(14) daily at 2026-10-27 08:48 CT: 9 overbought (AWK, BOXX, EGBN, ISRG, LMT), 25 oversold (BABA, BAC, BTDR, CMG, GE) of 188",
    "source": "RSI tracker",
    "priority": 3
   },
@@ -38,7 +33,7 @@
    "priority": 4
   },
   {
-   "text": "Top Meme Scout blocker: 'community_or_tweet_with_community' (4428 of 80764 rows)",
+   "text": "Top Meme Scout blocker: 'community_or_tweet_with_community' (4561 of 83054 rows)",
    "source": "Meme Scout",
    "priority": 4
   }
