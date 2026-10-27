@@ -21,8 +21,8 @@ const STALE_AFTER_S = 6 * 3600;         // data older than this => sleepy
 const HOT_NEW_S = 6 * 3600, HOT_SCORE = 75;
 const MOVE_PCT = 4;                      // SOL / BTC / ETH 24h move that counts as a market move
 
-const CYAN = "#2DD4FF", PINK = "#FF3B7A", AMBER = "#FFB020", SLATE = "#8FA3C8", TXT = "#E9ECF2", DIM = "#9AA6BD", BG = "#05060B";
-const ACCENT = { happy: CYAN, focused: CYAN, surprised: AMBER, worried: PINK, sleepy: SLATE };
+const CYAN = "#BDB0F2", PINK = "#8A82B8", AMBER = "#E6E0FA", SLATE = "#7A74A6", TXT = "#E9E6F4", DIM = "#9A93B8", BG = "#07040D";   // violet-white palette sampled from the reference (names kept for the rest of the file)
+const ACCENT = { happy: CYAN, focused: CYAN, surprised: AMBER, worried: "#9B7FE8", sleepy: SLATE };
 
 async function getJSON(url) {
   try {
@@ -121,7 +121,7 @@ function voiceLine(d, hour) {
   const lines = [];
   if (d.haveLive && d.agents) lines.push(`${d.agents} agents healthy. All quiet.`);
   if (d.haveSum) lines.push(d.open ? `${d.open} open decision${d.open === 1 ? "" : "s"}. Your call.` : "Nothing open. Standing by.");
-  lines.push(h >= 22 || h < 5 ? "Visor on. Night shift." : "Visor lit. Standing by.");
+  lines.push(h >= 22 || h < 5 ? "Eyes on. Night shift." : "Eyes lit. Standing by.");
   return lines[Math.floor(h / 2) % lines.length];
 }
 function statusLine(d) {
