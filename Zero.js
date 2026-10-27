@@ -1,6 +1,6 @@
 // ZERO — Scriptable widget: the Brain agent's face + one line in his voice, on EVERY widget size.
 //   Home Screen: small / medium / large        Lock Screen: accessoryRectangular / accessoryCircular / accessoryInline
-// Zero's face changes with the state (PNG renders of the 3D model, published next to zero.html):
+// Zero's face changes with the state (2D painted art, published next to zero.html):
 //   happy     agents healthy, nothing special
 //   surprised a NEW hot X Radar coin showed up (first seen < 6h ago, score >= 75)
 //   focused   SOL / BTC / ETH moved >= 4% in 24h (up)           worried = the same move, down
@@ -8,20 +8,21 @@
 // Public, already-published files only (no contact names, file paths, P&L, balances, positions or account data):
 //   brain-widget.json  gem-x.json  (agent-home-app)      live.json  (agent-home-web; only status lines, update time, public SOL/BTC/ETH marks)
 //   zero-face-<expr>.png  (agent-home-app, cached on the phone so the widget still draws offline)
-// Tap opens Zero's 3D page (…/agent-home-app/zero.html).
+// Tap opens Zero's page (…/agent-home-app/zero.html).
 const APP_URL = "https://elpsjerome158-arch.github.io/agent-home-app/";
 const ZERO_URL = APP_URL + "zero.html";
 const SUMMARY_URL = APP_URL + "brain-widget.json";
 const GEM_URL = APP_URL + "gem-x.json";
 const LIVE_URL = "https://elpsjerome158-arch.github.io/agent-home-web/StreamingAssets/AgentHome/live.json";
 const EXPRS = ["happy", "focused", "surprised", "worried", "sleepy"];
-const FACE_URL = (e) => APP_URL + "zero-face-" + e + ".png";
+const ART_VERSION = "2d-20261027b";     // bump when the art changes: busts the CDN URL and wipes the on-phone face cache
+const FACE_URL = (e) => APP_URL + "zero-face-" + e + ".png?v=" + ART_VERSION;
 const CACHE_NAME = "zero-widget-cache.json";
 const STALE_AFTER_S = 6 * 3600;         // data older than this => sleepy
 const HOT_NEW_S = 6 * 3600, HOT_SCORE = 75;
 const MOVE_PCT = 4;                      // SOL / BTC / ETH 24h move that counts as a market move
 
-const CYAN = "#BDB0F2", PINK = "#8A82B8", AMBER = "#E6E0FA", SLATE = "#7A74A6", TXT = "#E9E6F4", DIM = "#9A93B8", BG = "#07040D";   // violet-white palette sampled from the reference (names kept for the rest of the file)
+const VIOLET = "#BDB0F2", CYAN = VIOLET, PINK = "#8A82B8", AMBER = "#E6E0FA", SLATE = "#7A74A6", TXT = "#E9E6F4", DIM = "#9A93B8", BG = "#07040D";   // violet-white palette sampled from the reference (names kept for the rest of the file)
 const ACCENT = { happy: CYAN, focused: CYAN, surprised: AMBER, worried: "#9B7FE8", sleepy: SLATE };
 
 async function getJSON(url) {
@@ -38,11 +39,21 @@ function readCache() { try { const fm = fmLocal(), p = docPath(CACHE_NAME); retu
 function writeCache(o) { try { fmLocal().writeString(docPath(CACHE_NAME), JSON.stringify(o)); } catch (e) {} }
 
 // Face art: download -> keep the original bytes on disk -> fall back to the on-disk copy when offline.
+// wipe any face PNGs cached by an older art version (and the old un-versioned names)
+function purgeOldFaces() {
+  try {
+    const fm = fmLocal(), mark = docPath("zero-art-version.txt");
+    if (fm.fileExists(mark) && fm.readString(mark) === ART_VERSION) return;
+    fm.listContents(fm.documentsDirectory()).filter((f) => /^zero-face-/.test(f)).forEach((f) => { try { fm.remove(docPath(f)); } catch (e) {} });
+    fm.writeString(mark, ART_VERSION);
+  } catch (e) {}
+}
 async function loadFace(expr) {
   if (EXPRS.indexOf(expr) < 0) expr = "happy";
-  const p = docPath("zero-face-" + expr + ".png");
+  purgeOldFaces();
+  const p = docPath("zero-face-" + expr + "-" + ART_VERSION + ".png");
   try {
-    const r = new Request(FACE_URL(expr)); r.timeoutInterval = 20;
+    const r = new Request(FACE_URL(expr)); r.timeoutInterval = 20; r.headers = { "Cache-Control": "no-cache" };
     const data = await r.load();
     const img = Image.fromData(data);
     if (img) { try { fmLocal().write(p, data); } catch (e) {} return { img, cached: false, expr }; }
@@ -217,7 +228,7 @@ async function build(d, family, face) {
         const c = r.addStack(); c.layoutVertically(); txt(c, x[0], 20, col, true); txt(c, x[1], 10, DIM, false);
       });
       w.addSpacer(4);
-      txt(w, "tap → Zero in 3D", 9, DIM, false);
+      txt(w, "tap → Zero", 9, DIM, false);
     }
   }
   return w;
@@ -238,5 +249,5 @@ async function main() {
   else await w.presentLarge();
   Script.complete();
 }
-if (typeof module !== "undefined" && module.exports) module.exports = { loadData, loadFace, build, composeBg, statusLine, voiceLine, pickState, pickHot, pickMoves, ageText, EXPRS, STALE_AFTER_S, URLS: { ZERO_URL, SUMMARY_URL, GEM_URL, LIVE_URL, FACE_URL } };
+if (typeof module !== "undefined" && module.exports) module.exports = { ART_VERSION, loadData, loadFace, build, composeBg, statusLine, voiceLine, pickState, pickHot, pickMoves, ageText, EXPRS, STALE_AFTER_S, URLS: { ZERO_URL, SUMMARY_URL, GEM_URL, LIVE_URL, FACE_URL } };
 if (typeof __NODE_TEST__ === "undefined") main();
