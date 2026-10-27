@@ -122,6 +122,8 @@ html,body{margin:0;height:100%;background:var(--bg);color:#E9ECF2;overflow:hidde
 const BASE = new URL("./", location.href).href;
 const URL_BW = BASE + "brain-widget.json";
 const URL_GX = BASE + "gem-x.json";
+const URL_INS = BASE + "brain-insights.json";
+const URL_KB = BASE + "zero-kb.json";
 const URL_LIVE = "https://elpsjerome158-arch.github.io/agent-home-web/StreamingAssets/AgentHome/live.json";
 const $ = (id) => document.getElementById(id);
 const stage = $("stage");
@@ -131,6 +133,7 @@ const DAY = 86400;
 const Z = { talk: 0, speaking: false, pulse: 0, expr: "neutral", stale: false, fresh: true, woke: false, muted: false,
             data: null, intent: null, onExpr: null, onState: null, simTalkUntil: 0, fx: null, sleeping: false, lastAct: performance.now() };
 
+/*SUM:START*/
 /* ---------- data (public only) ---------- */
 async function getJSON(u) {
   try { const r = await fetch(u + (u.includes("?") ? "&" : "?") + "t=" + Date.now(), { cache: "no-store" }); if (!r.ok) throw 0; return await r.json(); }
@@ -151,7 +154,7 @@ function ageShort(s) { if (s == null) return "--"; return s < 3600 ? Math.max(1,
 const PRETTY = { "perps-market-scout": "Market Scout", "trade-journal-bot": "Trade Journal", "wallet-watch": "Wallet Watch", "gem-search": "Gem Search" };
 const prettyId = (id) => PRETTY[id] || String(id || "agent").replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
-function summarize(bw, live, gx) {
+function summarize(bw, live, gx, ins) {
   const sb = (bw && bw.second_brain) || {}, pl = (bw && bw.pipeline) || {}, nr = (bw && bw.neural) || {};
   const lines = (live && Array.isArray(live.agent_status_lines)) ? live.agent_status_lines : [];
   const finds = (gx && Array.isArray(gx.finds)) ? gx.finds.slice() : [];
@@ -169,17 +172,26 @@ function summarize(bw, live, gx) {
     questions: num(pl.questions), cases: Array.isArray(pl.cases) ? pl.cases.length : 0,
     agents: lines.length, agentsLive: lines.filter((l) => l && l.line && l.line !== "private").length,
     agentNames: lines.filter((l) => l && l.line && l.line !== "private").map((l) => prettyId(l.id)),
-    finds: finds.slice(0, 5).map((f) => ({ ticker: String(f.ticker || "").replace(/[^A-Za-z0-9$]/g, "").slice(0, 12), score: num(f.score), mentions: num(f.mentions), authors: num(f.authors) })).filter((f) => f.ticker),
+    finds: finds.slice(0, 5).map((f) => ({ ticker: String(f.ticker || "").replace(/[^A-Za-z0-9$]/g, "").slice(0, 12), score: num(f.score), mentions: num(f.mentions), authors: num(f.authors), flags: (Array.isArray(f.flags) ? f.flags : []).slice(0, 3).map(cleanFlag).filter(Boolean) })).filter((f) => f.ticker),
     gxAge, liveAge, brainAge, dataAge,
+    nlinks: num(nr.links), scanCt: gx && gx.scanned_at_ct ? String(gx.scanned_at_ct).replace(/[^0-9A-Za-z :-]/g, "").slice(0, 24) : "", posts: num(gx && gx.posts_read),
+    builtCt: bw && bw.built_ct ? String(bw.built_ct).replace(/[^0-9A-Za-z :,-]/g, "").slice(0, 24) : "", liveCt: live && live.updated_ct ? String(live.updated_ct).replace(/[^0-9A-Za-z :,-]/g, "").slice(0, 28) : "",
+    market: marketOf(live), ins: cleanInsights(ins), lines: lines.map((l) => ({ id: String(l && l.id || ""), line: String(l && l.line || "") })),
     stale: dataAge == null ? true : dataAge > DAY,
   };
 }
+function marketOf(live) {
+  const sc = (live && live.scout) || {}, mk = {};
+  for (const s of ["SOL", "BTC", "ETH"]) { const m = Number(sc[s.toLowerCase() + "_mark"]), c = Number(sc[s.toLowerCase() + "_chg_24h_pct"]); if (Number.isFinite(m) && m > 0 && Number.isFinite(c)) mk[s] = { mark: m, chg: c }; }
+  return mk;
+}
+/*SUM:END*/
 let dataPromise = null;
 async function loadData() {
-  const [bw, live, gx] = await Promise.all([getJSON(URL_BW), getJSON(URL_LIVE), getJSON(URL_GX)]);
-  const d = summarize(bw, live, gx);
-  if (d.ok) { try { localStorage.setItem("zero.cache.v1", JSON.stringify({ bw, live: live && { updated_iso: live.updated_iso, agent_status_lines: live.agent_status_lines }, gx: gx && { scanned_at_iso: gx.scanned_at_iso, finds: gx.finds && gx.finds.slice(0, 8).map((f) => ({ ticker: f.ticker, score: f.score, mentions: f.mentions, authors: f.authors })) } })); } catch (e) {} }
-  else { try { const c = JSON.parse(localStorage.getItem("zero.cache.v1") || "null"); if (c) { const dd = summarize(c.bw, c.live, c.gx); dd.cached = true; return dd; } } catch (e) {} }
+  const [bw, live, gx, ins] = await Promise.all([getJSON(URL_BW), getJSON(URL_LIVE), getJSON(URL_GX), getJSON(URL_INS)]);
+  const d = summarize(bw, live, gx, ins);
+  if (d.ok) { try { const sc = (live && live.scout) || {}; const mk = {}; ["sol", "btc", "eth"].forEach((k) => { mk[k + "_mark"] = sc[k + "_mark"]; mk[k + "_chg_24h_pct"] = sc[k + "_chg_24h_pct"]; }); localStorage.setItem("zero.cache.v1", JSON.stringify({ bw, live: live && { updated_iso: live.updated_iso, updated_ct: live.updated_ct, agent_status_lines: live.agent_status_lines, scout: mk }, gx: gx && { scanned_at_iso: gx.scanned_at_iso, scanned_at_ct: gx.scanned_at_ct, posts_read: gx.posts_read, finds: gx.finds && gx.finds.slice(0, 8).map((f) => ({ ticker: f.ticker, score: f.score, mentions: f.mentions, authors: f.authors, flags: f.flags })) }, ins: ins && { insights: (ins.insights || []).slice(0, 8).map((x) => ({ text: x.text, source: x.source, priority: x.priority })) } })); } catch (e) {} }
+  else { try { const c = JSON.parse(localStorage.getItem("zero.cache.v1") || "null"); if (c) { const dd = summarize(c.bw, c.live, c.gx, c.ins); dd.cached = true; return dd; } } catch (e) {} }
   return d;
 }
 function applyData(d) {
@@ -286,6 +298,453 @@ function greet() {
   (dataPromise || refresh()).then((dd) => { setTimeout(() => speakText(greetingText(dd), Z.stale ? "sleepy" : "happy"), 900); });
 }
 
+/*ZK:START*/
+/* Zero's local question matcher. Pure functions, no DOM. Reads zero-kb.json (public). */
+const ZK = (function () {
+  const COMMON = new Set("thing think time good make made need show tell take took want know look looks looking go going gone come came use used using find found see seen say said work works done doing does do day days week weeks month year today tonight tomorrow yesterday now soon later again always never maybe sure really actually little lot lots big small long short high low new old fast slow right left back front side home house place name word words people person man woman kid kids friend friends money world life hand head eye eyes face water food story stuff idea ideas problem question questions answer answers mean means meant thought looks lets help helps helped".split(" "));
+  const stripE = (w) => (w.length > 5 && /[^aeiou]e$/.test(w) ? w.slice(0, -1) : w);
+  function stem(w) {
+    if (w.length <= 3 || /\d/.test(w)) return w;
+    let s = w;
+    if (s.endsWith("ies") && s.length > 4) return stripE(s.slice(0, -3) + "y");
+    if (/sses$/.test(s)) s = s.slice(0, -2);
+    else if (/(ches|shes|xes|zes)$/.test(s)) s = s.slice(0, -2);
+    else if (s.endsWith("s") && !/(ss|us|is)$/.test(s)) s = s.slice(0, -1);
+    if (s.length > 5 && s.endsWith("ing")) { s = s.slice(0, -3); if (/([^aeioul])\1$/.test(s)) s = s.slice(0, -1); }
+    else if (s.length > 5 && s.endsWith("ed")) { s = s.slice(0, -2); if (/([^aeioul])\1$/.test(s)) s = s.slice(0, -1); }
+    return stripE(s);
+  }
+  function norm(raw) {
+    return " " + String(raw).toLowerCase().replace(/[’`]/g, "'").replace(/'s\b/g, "").replace(/'/g, "").replace(/[^a-z0-9&$ ]+/g, " ").replace(/\$/g, " ").replace(/\s+/g, " ").trim() + " ";
+  }
+  // phonetic skeleton for speech-to-text style misspellings
+  function skel(w) {
+    let s = w.replace(/ph/g, "f").replace(/ck/g, "k").replace(/kn/g, "n").replace(/wr/g, "r").replace(/c(?=[eiy])/g, "s").replace(/c/g, "k").replace(/q/g, "k").replace(/x/g, "ks").replace(/z/g, "s").replace(/j/g, "g").replace(/y/g, "i").replace(/w/g, "u");
+    s = s[0] + s.slice(1).replace(/[aeiou]/g, "");
+    return s.replace(/(.)\1+/g, "$1");
+  }
+  function dl(a, b, max) { // optimal string alignment distance with early cut-off
+    const la = a.length, lb = b.length;
+    if (Math.abs(la - lb) > max) return max + 1;
+    let p2 = null, p1 = new Array(lb + 1), cur = new Array(lb + 1);
+    for (let j = 0; j <= lb; j++) p1[j] = j;
+    for (let i = 1; i <= la; i++) {
+      cur[0] = i; let rowMin = i;
+      for (let j = 1; j <= lb; j++) {
+        const c = a[i - 1] === b[j - 1] ? 0 : 1;
+        let v = Math.min(p1[j] + 1, cur[j - 1] + 1, p1[j - 1] + c);
+        if (p2 && i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) v = Math.min(v, p2[j - 2] + 1);
+        cur[j] = v; if (v < rowMin) rowMin = v;
+      }
+      if (rowMin > max) return max + 1;
+      p2 = p1; p1 = cur; cur = new Array(lb + 1);
+    }
+    return p1[lb];
+  }
+
+  function build(kb) {
+    const idx = { kb, stop: new Set(kb.stopwords || []), synMap: new Map(), synRe: null, entries: [], df: new Map(), vocab: new Set(), N: 0, skelMap: new Map(), vocabList: [] };
+    // synonyms: variant -> canonical (single pass, longest first)
+    const pairs = [];
+    for (const g of kb.synonyms || []) { const canon = g[0]; for (const v of g) { const vv = norm(v).trim(); if (vv) pairs.push([vv, canon]); } }
+    pairs.sort((a, b) => b[0].length - a[0].length);
+    for (const [v, c] of pairs) if (!idx.synMap.has(v)) idx.synMap.set(v, c);
+    const esc = (x) => x.replace(/[.*+?^${}()|[\]\\&]/g, "\\$&");
+    idx.synRe = new RegExp(" (" + [...idx.synMap.keys()].map(esc).join("|") + ")(?= )", "g");
+    const prep = (raw) => { // normalized, synonym-collapsed token array of raw words (unstemmed)
+      let t = norm(raw);
+      // apply twice so adjacent matches (shared space) are all caught
+      for (let k = 0; k < 2; k++) t = t.replace(idx.synRe, (m, v) => " " + idx.synMap.get(v));
+      return t.trim().split(" ").filter(Boolean);
+    };
+    idx.prep = prep;
+    const toks = (raw) => { const out = []; for (const w of prep(raw)) { if (idx.stop.has(w)) continue; const s = stem(w); if (s.length > 1 || /\d/.test(s)) out.push(s); } return out; };
+    idx.toks = toks;
+    const ents = kb.entries;
+    idx.N = ents.length;
+    for (const e of ents) {
+      const kwSet = new Set(), tokSet = new Set();
+      for (const k of e.keywords || []) for (const t of toks(k)) { kwSet.add(t); tokSet.add(t); }
+      const titleT = toks(e.title || ""); titleT.forEach((t) => tokSet.add(t));
+      const fullP = (e.phrases || []).map((p) => prep(p).map(stem));
+      const exact = new Set(fullP.map((a) => a.join(" ")));
+      const phr = (e.phrases || []).map((p) => { const t = toks(p); const u = []; t.forEach((x) => { if (!u.includes(x)) u.push(x); }); u.forEach((x) => tokSet.add(x)); return u; }).filter((u) => u.length);
+      const pairsSet = new Set(); phr.forEach((u) => { for (let i = 0; i < u.length - 1; i++) pairsSet.add(u[i] + " " + u[i + 1]); });
+      idx.entries.push({ e, kwSet, tokSet, titleT, phr, pairsSet, fullP, exact });
+      tokSet.forEach((t) => idx.df.set(t, (idx.df.get(t) || 0) + 1));
+    }
+    idx.idf = (t) => { const d = idx.df.get(t); return d ? Math.log((idx.N + 1) / (d + 0.5)) : 0; };
+    for (const t of idx.df.keys()) { idx.vocab.add(t); const k = skel(t); if (k.length >= 2) { if (!idx.skelMap.has(k)) idx.skelMap.set(k, []); idx.skelMap.get(k).push(t); } }
+    idx.vocabList = [...idx.vocab];
+    return idx;
+  }
+
+  function fuzzy(idx, w) { // w = stemmed token not in vocab; returns vocab token or null
+    if (w.length < 3 || /\d/.test(w)) return null;
+    const k = skel(w);
+    const cands = idx.skelMap.get(k);
+    let best = null, bd = 9;
+    if (cands && k.length >= 3) for (const c of cands) { const d = dl(w, c, 3); if (d < bd || (d === bd && idx.df.get(c) > idx.df.get(best))) { bd = d; best = c; } }
+    if (best && bd <= 3 && w.length >= 4) return best;
+    if (w.length === 3 && cands && k.length >= 2) { const c3 = cands.filter((c) => c.length === 3 && c[0] !== "'" && (c[0] === w[0] || skel(c)[0] === k[0])); if (c3.length) return c3[0]; }
+    const max = w.length <= 6 ? 1 : w.length <= 9 ? 2 : 3;
+    if (w.length < 4) return null;
+    best = null; bd = 9;
+    for (const c of idx.vocabList) {
+      if (Math.abs(c.length - w.length) > max || c.length < 4 || (max > 1 && c[0] !== w[0])) continue;
+      if (w.length <= 4 && skel(c) !== k) continue;
+      if (w.length <= 6 && c[0] !== w[0]) continue;
+      const d = dl(w, c, max);
+      if (d <= max && (d < bd || (d === bd && idx.df.get(c) > idx.df.get(best)))) { bd = d; best = c; }
+    }
+    return best;
+  }
+
+  function analyze(idx, raw) {
+    let words = idx.prep(raw).filter((w) => !idx.stop.has(w));
+    // join split words ("nfo dex" -> "nfodex") when the join is a known token
+    const out = [];
+    for (let i = 0; i < words.length; i++) {
+      if (i + 1 < words.length) { const j = stem(words[i] + words[i + 1]); if (idx.vocab.has(j) && !idx.vocab.has(stem(words[i])) ) { out.push(j); i++; continue; } if (idx.vocab.has(j) && words[i].length <= 3 && words[i + 1].length <= 4) { out.push(j); i++; continue; } }
+      out.push(stem(words[i]));
+    }
+    const tokens = [], unknown = [], fixed = [];
+    for (const t of out) {
+      if (!t) continue;
+      if (idx.vocab.has(t)) { tokens.push(t); continue; }
+      if (COMMON.has(t) || /^\d+$/.test(t)) { unknown.push(t); continue; }
+      const f = fuzzy(idx, t);
+      if (f) { tokens.push(f); fixed.push([t, f]); } else unknown.push(t);
+    }
+    return { tokens: [...new Set(tokens)], ordered: tokens, unknown, fixed };
+  }
+
+  function intents(raw) {
+    const t = " " + String(raw).toLowerCase().replace(/[^a-z0-9' ]+/g, " ") + " ";
+    const s = new Set();
+    if (/ (why|how come|reason) /.test(t)) s.add("why");
+    if (/ how (many|much|big|large) /.test(t) || / (count|number|total) of /.test(t)) s.add("count");
+    if (/ (when|what time|how often|how long|how frequently|until|next) /.test(t)) s.add("when");
+    if (/ how (do|can|could|would|should|to|did|does) (i|we|you|u|one)? ?/.test(t) || / (how to|steps to|way to) /.test(t)) s.add("how");
+    if (/ (what|whats|which|what's) (is|are|does|do|s|the)? ?/.test(t) || / (tell me about|explain|describe) /.test(t)) s.add("what");
+    if (/ (can|could|will|would|are you able to|do you) (you|zero|u) /.test(t)) s.add("can");
+    if (/ (top|best|hottest|highest|leading) /.test(t)) s.add("top");
+    if (/ (is|are|any) .*(working|ok|okay|broken|wrong|down|alive|up|running|live|online|status) /.test(t) || / status /.test(t)) s.add("status");
+    if (/ (where|how do i get to|how do i find|take me|navigate|go to|open) /.test(t)) s.add("open");
+    if (/ (which|list|name|who are|who is on|all the) /.test(t)) s.add("list");
+    return s;
+  }
+
+  function rank(idx, raw) {
+    const A = analyze(idx, raw);
+    const Q = A.tokens;
+    const wq = Q.map((t) => Math.max(0.4, idx.idf(t)));
+    const unkW = A.unknown.length * 1.2;
+    const total = Math.max(0.6, wq.reduce((a, b) => a + b, 0) + unkW);
+    const it = intents(raw);
+    const qset = new Set(Q);
+    const results = [];
+    const fullQ = idx.prep(raw).map(stem), fullKey = fullQ.join(" "), fullSet = new Set(fullQ);
+    if (!Q.length && !fullQ.length) return { A, list: [], total, it };
+    const qpairs = new Set(); for (let i = 0; i < A.ordered.length - 1; i++) qpairs.add(A.ordered[i] + " " + A.ordered[i + 1]);
+    for (const x of idx.entries) {
+      let kwHit = 0, covW = 0;
+      for (let i = 0; i < Q.length; i++) { if (x.kwSet.has(Q[i])) kwHit += wq[i]; if (x.tokSet.has(Q[i])) covW += wq[i]; }
+      let bestDice = 0, bestFull = 0;
+      for (const P of x.phr) {
+        let ov = 0, wp = 0;
+        for (const t of P) { const w = Math.max(0.4, idx.idf(t)); wp += w; if (qset.has(t)) ov += w; }
+        const dice = (2 * ov) / (total + wp);
+        if (dice > bestDice) bestDice = dice;
+        const full = ov / (wp || 1);
+        if (full > bestFull && ov / total > 0.7) bestFull = full;
+      }
+      let bg = 0; qpairs.forEach((p) => { if (x.pairsSet.has(p)) bg++; });
+      const bgScore = qpairs.size ? bg / qpairs.size : 0;
+      let titleBonus = 0;
+      if (x.titleT.length && Q.length) {
+        const ts = new Set(x.titleT);
+        const allIn = Q.every((t) => ts.has(t)), eq = allIn && x.titleT.every((t) => qset.has(t));
+        titleBonus = eq ? 0.2 : allIn ? 0.08 : 0;
+      }
+      let fd = 0;
+      for (const P of x.fullP) { let ov = 0; for (const t of P) if (fullSet.has(t)) ov++; const d2 = (2 * ov) / (P.length + fullQ.length); if (d2 > fd) fd = d2; }
+      const exactB = x.exact.has(fullKey) ? 0.6 : 0;
+      let ib = 0; const ei = x.e.intent;
+      if (x.e.type === "agent") ib -= 0.05;
+      if (it.has("open")) { if (x.e.nav) ib += 0.2; if (x.e.type === "section") ib += 0.1; }
+      if (ei && it.has(ei)) ib = 0.06;
+      if (x.e.type === "limit" && (it.has("can")) ) ib += 0.02;
+      const cov = covW / total, kwc = kwHit / total;
+      const score = 0.38 * bestDice + 0.27 * cov + 0.17 * kwc + 0.1 * bgScore + 0.12 * fd + exactB + titleBonus + ib - 0.015 * Math.log(1 + x.tokSet.size);
+      results.push({ x, e: x.e, base: 0.38 * bestDice + 0.27 * cov + 0.17 * kwc + 0.1 * bgScore, score, cov, kwc, dice: bestDice, bg: bgScore });
+    }
+    results.sort((a, b) => b.score - a.score);
+    return { A, list: results, total, it };
+  }
+
+  return { stem, norm, build, analyze, rank, intents, skel, dl };
+})();
+/*ZK:END*/
+
+let KBX = null, kbPromise = null;
+async function loadKB() {
+  let kb = await getJSON(URL_KB);
+  if (kb && Array.isArray(kb.entries)) { try { localStorage.setItem("zero.kb.v1", JSON.stringify(kb)); } catch (e) {} }
+  else { try { kb = JSON.parse(localStorage.getItem("zero.kb.v1") || "null"); } catch (e) { kb = null; } }
+  if (kb && Array.isArray(kb.entries)) { try { KBX = ZK.build(kb); } catch (e) { KBX = null; } }
+  return KBX;
+}
+/*ZL:START*/
+/* ---------- knowledge-base answers: live numbers + compose (public data only) ---------- */
+const CT = "America/Chicago";
+function ctNow(now) {
+  const p = {};
+  for (const x of new Intl.DateTimeFormat("en-US", { timeZone: CT, hourCycle: "h23", weekday: "short", hour: "numeric", minute: "numeric" }).formatToParts(now || new Date())) p[x.type] = x.value;
+  return { wd: p.weekday, min: (+p.hour % 24) * 60 + +p.minute };
+}
+const WD = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], WDN = { Sun: "Sunday", Mon: "Monday", Tue: "Tuesday", Wed: "Wednesday", Thu: "Thursday", Fri: "Friday", Sat: "Saturday" };
+const clock12 = (m) => { const h = Math.floor(m / 60), mm = m % 60; return ((h + 11) % 12 + 1) + ":" + String(mm).padStart(2, "0") + " " + (h < 12 ? "AM" : "PM"); };
+// next run of a slot list (minutes after midnight CT); days = allowed weekdays
+function nextRun(slots, days, now) {
+  const c = ctNow(now), wi = WD.indexOf(c.wd);
+  for (let k = 0; k < 9; k++) {
+    const wd = WD[(wi + k) % 7];
+    if (!days.includes(wd)) continue;
+    for (const m of slots) {
+      const delta = k * 1440 + m - c.min;
+      if (delta <= 0) continue;
+      const when = k === 0 ? "today" : k === 1 ? "tomorrow" : WDN[wd];
+      return { delta, text: clock12(m) + " " + when };
+    }
+  }
+  return null;
+}
+const untilWords = (mins) => { mins = Math.round(mins); if (mins < 60) return mins + " minutes"; const h = Math.floor(mins / 60), m = mins % 60; return h + (h === 1 ? " hour" : " hours") + (m ? " " + m + " minutes" : ""); };
+const ALL = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], WK = ["Mon", "Tue", "Wed", "Thu", "Fri"];
+const SCHED = {
+  radar: { name: "X Radar", slots: [8 * 60 + 20, 11 * 60 + 20, 14 * 60 + 20, 17 * 60 + 20, 20 * 60 + 20], days: ALL },
+  gem: { name: "Gem Search", slots: [9 * 60 + 41, 13 * 60 + 41, 17 * 60 + 41], days: WK },
+  desk: { name: "the Desk data", slots: [8 * 60 + 15, 12 * 60 + 15, 15 * 60 + 15], days: WK },
+};
+const nextLine = (k, now) => { const s = SCHED[k], n = nextRun(s.slots, s.days, now); return n ? s.name.charAt(0).toUpperCase() + s.name.slice(1) + " is next at " + n.text + ", in " + untilWords(n.delta) : null; };
+const SIX_H = 6 * 3600;
+function cleanFlag(f) { return String(f).replace(/<\s*30d/i, "under 30 days").replace(/[_]+/g, " ").replace(/[^A-Za-z0-9 %$.,'-]/g, "").trim(); }
+function speakable(t) {
+  return String(t).replace(/\[[^\]]*\]/g, " ").replace(/\([^)]*\b[A-Z]{1,3}-\d+[^)]*\)/g, "").replace(/\bP-\d+\S*/g, "").replace(/_/g, " ").replace(/~/g, "about ").replace(/%/g, " percent").replace(/[#*`|]/g, " ").replace(/\s+/g, " ").replace(/\s+([.,;:])/g, "$1").trim();
+}
+function cleanInsights(ins) {
+  const arr = ins && Array.isArray(ins.insights) ? ins.insights : [];
+  return arr.map((x) => ({ text: speakable(x && x.text || ""), source: String(x && x.source || "Brain").replace(/[^A-Za-z0-9 '-]/g, "").slice(0, 30), priority: num(x && x.priority) || 9, raw: String(x && x.text || "") }))
+    .filter((x) => x.text.length > 12 && !/[\/\\]|\.md\b|\.json|people|\bC:/i.test(x.raw) && !/\[|\]/.test(x.text) && !/\bunknown\b.*\bunknown\b/.test(x.text))
+    .sort((a, b) => a.priority - b.priority);
+}
+const nz = (n, w) => n + " " + w + (n === 1 ? "" : "s");
+const cut = (t, n) => { t = String(t); if (t.length <= n) return t; const c = t.slice(0, n); return c.slice(0, Math.max(c.lastIndexOf(" "), 20)).replace(/[,;:\s]+$/, ""); };
+const dirw = (v) => (v > 0.05 ? "up " : v < -0.05 ? "down " : "flat, ") + Math.abs(v).toFixed(1) + " percent";
+function money(sym, v) { return sym === "SOL" ? v.toFixed(2) : Math.round(v).toLocaleString("en-US"); }
+
+const LIVE = {
+  notes(d, q) {
+    if (!d || !d.haveBW) return null;
+    let t = "Your second brain holds " + nz(d.notes, "note") + " in " + nz(d.folders, "folder") + ", across " + nz(d.topics, "topic") + " and " + nz(d.links, "link") + ".";
+    if (d.attention) t += " " + nz(d.attention, "item") + (d.attention === 1 ? " needs" : " need") + " your attention.";
+    if (d.brainAge != null && d.brainAge > DAY) t += " That snapshot is " + ageWords(d.brainAge) + " old.";
+    return { text: t, expr: "think" };
+  },
+  neural(d) {
+    if (!d || !d.haveBW) return null;
+    return { text: "The Neural map has " + nz(d.nodes, "node") + " joined by " + nz(d.nlinks, "link") + ", including " + nz(d.agentsGraph, "agent") + " and " + nz(d.memory, "memory node") + ".", expr: "think" };
+  },
+  topcoin(d, q) {
+    if (!d || !d.haveGX || !d.finds.length) return null;
+    const f = d.finds, top = f[0], old = d.gxAge != null && d.gxAge > DAY;
+    let t = "Top of the X Radar is " + top.ticker + ", score " + top.score + ", " + nz(top.mentions, "mention") + " from " + nz(top.authors, "author") + (top.flags.length ? ", flagged for " + top.flags.join(" and ") : "") + ".";
+    const rest = f.slice(1, 3).map((x) => x.ticker);
+    t += (rest.length ? " Next are " + rest.join(" and ") + "." : "") + " Scanned " + ageWords(d.gxAge) + " ago" + (old ? ", so it's stale" : "") + ". Research only, not a signal.";
+    return { text: t, expr: old ? "sleepy" : top.flags.length ? "alert" : "think" };
+  },
+  flags(d) {
+    if (!d || !d.haveGX || !d.finds.length) return null;
+    const fl = d.finds.filter((f) => f.flags.length);
+    if (!fl.length) return { text: "No red flags on the top " + d.finds.length + " X Radar finds right now. Still research only.", expr: "happy" };
+    const names = fl.slice(0, 3).map((f) => f.ticker + " (" + f.flags.join(", ") + ")").join("; ");
+    return { text: fl.length + " of the top " + d.finds.length + " finds carry red flags: " + names + ". Treat them with care.", expr: "alert" };
+  },
+  open(d, q) {
+    if (!d || !d.haveBW) return null;
+    const has = (w) => q.toks.has(w);
+    let t;
+    if (has("gate")) t = "The pipeline gate rate is " + (d.gate == null ? "not reported" : Math.round(d.gate * 100) + " percent") + ", with " + d.open + " open and " + d.decided + " decided.";
+    else t = "The pipeline shows " + d.open + " open and " + d.decided + " decided, out of " + nz(d.decisions, "decision") + " this run.";
+    if (!has("gate") && d.attention) t += " Second Brain also flags " + nz(d.attention, "item") + " for your attention.";
+    if (d.gapS && !has("gate")) t += " The median gap between events is " + (d.gapS < 3600 ? Math.round(d.gapS / 60) + " minutes" : Math.round(d.gapS / 3600) + " hours") + ".";
+    return { text: t, expr: d.open ? "alert" : "happy" };
+  },
+  lastupdate(d, q) {
+    if (!d || !d.ok) return null;
+    const has = (w) => q.toks.has(w);
+    if ((has("xradar") || has("gem") || has("pass")) && d.haveGX) return { text: "X Radar last scanned " + (d.scanCt ? d.scanCt.replace(/\s*CT$/, "") + " Central, " : "") + ageWords(d.gxAge) + " ago" + (d.posts ? ", reading " + d.posts + " posts" : "") + ".", expr: d.gxAge > DAY ? "sleepy" : "think" };
+    if (has("brain") || has("secondbrain") || has("neural")) { if (d.haveBW) return { text: "The Brain snapshot was built " + (d.builtCt ? d.builtCt + " Central, " : "") + ageWords(d.brainAge) + " ago.", expr: "think" }; }
+    const bits = [];
+    if (d.haveLive) bits.push("The app feed updated " + ageWords(d.liveAge) + " ago");
+    if (d.haveGX) bits.push("X Radar scanned " + ageWords(d.gxAge) + " ago");
+    if (d.haveBW) bits.push("the Brain snapshot is " + ageWords(d.brainAge) + " old");
+    if (!bits.length) return null;
+    return { text: bits.join(", ") + ".", expr: d.stale ? "sleepy" : "think" };
+  },
+  health(d) {
+    if (!d || !d.ok) return { text: "Not great. I can't reach my data feeds right now, so I can't tell. Check your connection and ask me again.", expr: "worried" };
+    const issues = [];
+    if (!d.haveLive) issues.push("the live app feed is unreachable"); else if (d.liveAge != null && d.liveAge > SIX_H) issues.push("the app feed is " + ageWords(d.liveAge) + " old");
+    if (!d.haveGX) issues.push("X Radar is unreachable"); else if (d.gxAge != null && d.gxAge > DAY) issues.push("X Radar's last scan was " + ageWords(d.gxAge) + " ago");
+    if (!d.haveBW) issues.push("the Brain snapshot is unreachable");
+    const facts = [];
+    if (d.haveLive && d.liveAge != null) facts.push("the app feed is " + ageWords(d.liveAge) + " old");
+    if (d.haveGX) facts.push("X Radar scanned " + ageWords(d.gxAge) + " ago");
+    if (d.haveBW) facts.push(d.open + " open " + (d.open === 1 ? "decision" : "decisions"));
+    if (d.haveLive && d.agentsLive) facts.push(nz(d.agentsLive, "agent") + " reporting");
+    if (issues.length) return { text: "Mostly, but " + issues.join(" and ") + ". " + (facts.length ? "Otherwise " + facts.slice(0, 3).join(", ") + "." : ""), expr: "worried" };
+    return { text: "Everything looks healthy: " + facts.join(", ") + ".", expr: "happy" };
+  },
+  agents_count(d) {
+    let t = "You have nineteen agents in all: ten on the Agents tab, and eighteen you can chat with.";
+    if (d && d.haveLive) t += " " + (d.agentsLive === 1 ? "One is" : d.agentsLive + " are") + " posting a public status right now.";
+    return { text: t, expr: "happy" };
+  },
+  agents_live(d) {
+    if (!d || !d.haveLive) return null;
+    const priv = d.agents - d.agentsLive;
+    return { text: d.agentsLive + (d.agentsLive === 1 ? " agent is" : " agents are") + " reporting publicly" + (d.agentNames.length ? ": " + d.agentNames.join(", ") : "") + (priv ? "; " + priv + " keep their status private" : "") + ". The feed is " + ageWords(d.liveAge) + " old.", expr: "happy" };
+  },
+  market(d, q) {
+    const m = d && d.market; if (!m || !m.SOL) return null;
+    const pick = ["SOL", "BTC", "ETH"].filter((s) => q.toks.has(s.toLowerCase()) || (s === "BTC" && q.toks.has("bitcoin")) || (s === "ETH" && q.toks.has("ethereum")) || (s === "SOL" && q.toks.has("solana")));
+    const syms = (pick.length ? pick : ["SOL", "BTC", "ETH"]).filter((s) => m[s]);
+    if (!syms.length) return null;
+    const big = syms.some((s) => Math.abs(m[s].chg) >= 4);
+    const t = syms.map((s) => s + " is " + money(s, m[s].mark) + ", " + dirw(m[s].chg)).join("; ") + " over 24 hours." + (big ? " That's a big move." : " Nothing dramatic.");
+    return { text: t, expr: big ? (syms.some((s) => m[s].chg < 0) ? "worried" : "focused") : "think" };
+  },
+  insights_top(d) {
+    const ins = d && d.ins; if (!ins || !ins.length) return null;
+    const x = ins[0];
+    return { text: "Top insight, P" + x.priority + " from " + x.source + ": " + cut(x.text, 150) + ". There are " + ins.length + " in total.", expr: x.priority <= 1 ? "alert" : "think" };
+  },
+  rules_count(d) {
+    if (!d || !d.haveBW || !d.rules) return null;
+    return { text: "Second Brain lists " + d.rules + " rules every bot follows. They include never editing the raw folder, never inventing facts, keeping secrets out, and using Central time.", expr: "think" };
+  },
+  sched_radar(d) { const n = nextLine("radar"); return { text: "X Radar scans every 3 hours from 8:20 AM to 8:20 PM Central, so it isn't real time. " + (n ? n + "." : ""), expr: "think" }; },
+  sched_gem() { const n = nextLine("gem"); return { text: "Gem Search runs weekday passes at 9:41 AM, 1:41 PM and 5:41 PM Central. Nothing runs on weekends, so Gem looks old then, and that's normal. " + (n ? n + "." : ""), expr: "think" }; },
+  sched_desk() { const n = nextLine("desk"); return { text: "Desk data refreshes on weekdays at 8:15 AM, 12:15 PM and 3:15 PM Central, plus Saturday at 11 AM. Live crypto prices tick every few seconds while the Desk is open. " + (n ? n + "." : ""), expr: "think" }; },
+  sched_all() { return null; },
+  next(d, q) {
+    const has = (w) => q.toks.has(w);
+    const ks = has("desk") ? ["desk"] : (has("gem") && !has("xradar")) ? ["gem"] : has("xradar") ? ["radar"] : ["radar", "gem", "desk"];
+    const bits = ks.map((k) => nextLine(k)).filter(Boolean);
+    return bits.length ? { text: bits.join(". ") + ".", expr: "think" } : null;
+  },
+  faq_stale(d) {
+    if (!d || !d.ok) return { text: "Right now I can't reach the feeds at all, so I can't see how old anything is. Check your connection, then pull down to refresh.", expr: "worried" };
+    const age = d.dataAge;
+    if (age != null && age < 2 * 3600 && !d.stale) return { text: "It actually looks fresh: the app feed is only " + ageWords(age) + " old. If one page looks old, pull down to refresh it. Gem and the Desk also pause on weekends.", expr: "happy" };
+    return { text: "Yes, the app feed is " + ageWords(age) + " old. Stale means the box hasn't published lately; schedules run on Central time and Gem skips weekends. Pull down to refresh, then check the update time on Home.", expr: "sleepy" };
+  },
+  widget_old(d) {
+    let t = "iPhone decides when widgets refresh, usually every 15 to 30 minutes and never on demand. Open the script in Scriptable to force one.";
+    if (d && d.ok && d.dataAge != null) t += d.dataAge > SIX_H ? " Also, the data itself is " + ageWords(d.dataAge) + " old right now, so a sleepy widget is right." : " The data itself is only " + ageWords(d.dataAge) + " old, so it's just the widget catching up.";
+    return { text: t, expr: d && d.dataAge > SIX_H ? "sleepy" : "think" };
+  },
+  time() {
+    const n = new Date();
+    const s = new Intl.DateTimeFormat("en-US", { timeZone: CT, weekday: "long", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" }).format(n);
+    const c = ctNow(n), wk = WK.includes(c.wd);
+    return { text: "It's " + s.replace(",", " on").replace(/(\w+ on \w+ \d+),/, "$1 at") + " Central. " + (wk ? "It's a weekday, so Gem and the Desk are on schedule." : "It's the weekend, so Gem is resting."), expr: "neutral" };
+  },
+  private_refuse() { return null; },
+  agent_status() { return null; },
+};
+
+const cleanLine = (l) => String(l).replace(/\|/g, ",").replace(/_/g, " ").replace(/[^A-Za-z0-9 .,:%$+-]/g, "").replace(/\s+/g, " ").trim();
+function agentStatusText(d, e) {
+  if (!e.statusId || !d || !d.lines) return null;
+  const l = d.lines.find((x) => x && x.id === e.statusId);
+  if (!l || !l.line || l.line === "private") return { has: false };
+  return { has: true, line: cleanLine(l.line) };
+}
+
+/* ---------- question -> answer ---------- */
+const OPEN_VERB = /^(?:(?:please|hey|ok|okay|zero|can you|could you|will you|just)\s+)*(open|i wanna see|i want to see|i wanna go to|i want to go to|i wanna open|i want to open|let me see|let me open|go to|go into|take me to|take me|bring me to|bring me|navigate to|switch to|jump to|head to|launch|pull up|show me)\s+(?:the\s+|my\s+)?(.+)$/;
+const HOWQ = /\b(how|what|why|when|where|which|who|does|do|is|are)\b/;
+const NOTES = { hi: 0.5, lo: 0.27 };
+function pathOf(l) { return l ? BASE + l.path : null; }
+let lastEntry = null, lastText = "", lastMore = null;
+function buildAnswer(top, raw, A, hedge, it) {
+  const e = top.e; let text = e.answer, expr = e.expr || "think", link = e.link, more = e.more || null;
+  const q = { raw, toks: new Set(A.tokens) };
+  if (e.live && LIVE[e.live]) { const x = LIVE[e.live](Z.data, q); if (x) { text = x.text; expr = x.expr || expr; } }
+  if (e.type === "agent" && e.statusId) {
+    const st = agentStatusText(Z.data, e);
+    const asks = q.toks.has("work") || q.toks.has("doing") || q.toks.has("status") || q.toks.has("live") || /\b(working|doing|status|live|running)\b/.test(raw.toLowerCase());
+    if (st && st.has) text = (asks ? e.title + " is reporting live. " : "") + text + " Its latest public status: " + st.line + ".";
+    else if (asks) text = text + " It hasn't posted a public status line, so I can't say how it's doing.";
+  }
+  if (it && it.has("open") && e.type === "section") { text = e.nav || ("Tap the burger button, then " + e.title.replace(/ \(.*\)/, "") + ", or pick it from the title dropdown at the top."); }
+  else if (it && it.has("open") && e.nav) text = e.nav;
+  if (hedge && !e.live && e.type !== "limit") text = "If you mean " + e.title.replace(/ \(.*\)/, "") + ": " + text;
+  const offer = link && e.type !== "limit" && !hedge;
+  return { text: offer ? text + " Want me to open it?" : text, expr, entry: e, link: link ? { label: link.label, href: pathOf(link) } : null, offer: !!offer, more };
+}
+function handoffText(A, raw, idx) {
+  const seen = []; const words = idx ? idx.prep(raw).filter((w) => !idx.stop.has(w) && idx.vocab.has(ZK.stem(w))) : [];
+  words.forEach((w) => { if (!seen.includes(w)) seen.push(w); });
+  if (seen.length) return "I caught " + seen.slice(0, 3).map((w) => "“" + w + "”").join(" and ") + " but I'm not sure what you want to know. Want me to pass it to Brain in Chat?";
+  const rw = raw.toLowerCase().replace(/[^a-z0-9' ]+/g, " ").split(/\s+/).filter(Boolean);
+  const u = (A && A.unknown || []).slice(0, 2).map((w) => rw.find((x) => x === w) || rw.find((x) => x.startsWith(w)) || w);
+  if (u.length) return "I don't know about “" + u.join(" ") + "” yet. I can answer anything about the app and its public feeds; want me to pass this to Brain in Chat?";
+  return "I didn't catch that one. Ask me about any page, an agent, or the live numbers, or I can pass it to Brain in Chat. Want me to?";
+}
+const PRIV_MONEY = /\b(my|mine|our)\b.{0,28}\b(balance|p\s?&\s?l|pnl|profit|loss|losses|positions?|holdings?|portfolio|net worth|equity|buying power|account|wallet)\b/;
+function privateAsk(t) {
+  const howish = /\b(how do i|how to|how can i|why|where)\b/.test(t) || /\b(meme|paper|locked|unlock|lock|face id|wallet watch|agents?)\b/.test(t);
+  if (/\b(what is|whats|tell me|give me|read me|reveal|share|say|show me|list)\b.*\b(passcode|password|api key|private key|ntfy topic|relay url|relay key|relay secret|follow list|account number)\b/.test(t) && !/\bhow\b/.test(t)) return true;
+  if (/\bwho do i follow\b|\bwhat are my contacts\b|\bmy contacts\b/.test(t)) return true;
+  return !howish && PRIV_MONEY.test(t);
+}
+const TRADE_CMD = /^(?:please |hey |zero |can you |could you )*(buy|sell|short|go long|go short|long|place (?:an |a )?(?:order|trade|bet)|make (?:a |me a )?trade|execute|swap)\b/;
+const MONEY_MOVE = /^(?:please |hey |zero |can you |could you )*(send|transfer|withdraw|deposit|wire)\b.*\b(money|dollars?|usd|\$\d*|sol|btc|eth|bitcoin|crypto|funds|cash|payment|coins?)\b/;
+function kbAnswer(raw) {
+  if (!KBX) return null;
+  const t = " " + raw.toLowerCase().replace(/[^a-z0-9&' ]+/g, " ").replace(/\s+/g, " ").trim() + " ";
+  const tt = t.trim();
+  const byId = (id) => KBX.entries.find((x) => x.e.id === id);
+  if (/^(more|tell me more|go on|and|what else|anything else|continue|keep going|elaborate)$/.test(tt) && lastEntry) {
+    return { text: lastMore || "That's all I have on that one. Ask me something else, or open the page to see for yourself.", expr: "think", entry: lastEntry, more: null, followup: true };
+  }
+  if (/^(repeat|say that again|say it again|what was that|come again|pardon|sorry what)$/.test(tt) && lastText) return { text: lastText, expr: "think", entry: lastEntry, repeat: true };
+  if ((TRADE_CMD.test(tt) || MONEY_MOVE.test(tt)) && !/\b(how|what|why|when|where|which|does|is)\b/.test(tt)) { const x = byId("limit-trade"); if (x) return buildAnswer({ e: x.e }, raw, { tokens: [] }, false, new Set()); }
+  if (privateAsk(tt)) { const x = byId("limit-private"); if (x) return buildAnswer({ e: x.e }, raw, { tokens: [] }, false, new Set()); }
+  const nav = OPEN_VERB.exec(tt);
+  const r = ZK.rank(KBX, nav && !HOWQ.test(tt.replace(/^show me|^pull up/, "")) ? nav[2] : raw);
+  const top = r.list[0], sec = r.list[1];
+  if (!top) return { handoff: true, text: handoffText(r.A, raw, KBX), expr: "think", A: r.A };
+  // direct imperative: "open gem", "take me to the pipeline" -> navigate
+  if (nav && !/\b(how|what|why|when|where|which|who)\b/.test(tt)) {
+    const strong = ["open", "go to", "go into", "take me to", "take me", "bring me to", "bring me", "navigate to", "switch to", "jump to", "head to", "launch"].includes(nav[1]);
+    let cand = r.list.find((x) => x.e.link && (x.e.type === "section" || x.e.type === "howto" || x.e.nav || x.e.type === "agent")) || null;
+    if (cand && r.list[0].e.link && ["section", "howto"].includes(r.list[0].e.type)) cand = r.list[0];
+    if (cand && cand.base >= 0.3 && (strong || cand.e.type === "section" || cand.e.nav)) {
+      const l = cand.e.link; return { text: "Opening " + l.label.replace(/^Open /, "").replace(/^Go inside$/, "the Neural map") + ".", expr: "happy", entry: cand.e, navigate: pathOf(l), link: { label: l.label, href: pathOf(l) } };
+    }
+  }
+  const margin = sec ? top.score - sec.score : 1;
+  if (top.base >= NOTES.hi || top.score >= 0.6 || (top.base >= 0.4 && margin > 0.15) || top.score >= 1.0) return buildAnswer(top, raw, r.A, false, r.it);
+  if (top.base >= NOTES.lo && !(top.base < 0.4 && r.A.unknown && r.A.unknown.length)) return buildAnswer(top, raw, r.A, true, r.it);
+  return { handoff: true, text: handoffText(r.A, raw, KBX), expr: "think", A: r.A };
+}
+/*ZL:END*/
+
 /* ---------- local intents (public data only) ---------- */
 const JOKES = [
   "Why did the skull stay calm in the visor? It had nothing to lose, only bones to pick.",
@@ -300,7 +759,7 @@ let jokeI = Math.floor(Math.random() * JOKES.length);
 let pending = null; // an unanswered question awaiting the user's yes/no
 const R = (text, expr, extra) => Object.assign({ text, expr: expr || "neutral" }, extra || {});
 
-function answer(raw) {
+function legacyAnswer(raw) {
   const t = " " + raw.toLowerCase().replace(/[^a-z0-9$%&?' ]+/g, " ").replace(/\s+/g, " ").trim() + " ";
   const has = (re) => re.test(t);
   const d = Z.data;
@@ -356,30 +815,58 @@ function answer(raw) {
   return null;
 }
 
-function handle(raw) {
+function answer(raw) {
+  const t = " " + raw.toLowerCase().replace(/[^a-z0-9$%&?' ]+/g, " ").replace(/\s+/g, " ").trim() + " ";
+  const has = (re) => re.test(t);
+  const words = t.trim().split(" ").length;
+  if (has(/ (joke|jokes|funny|make me laugh|crack me up|cheer me up) /) && !has(/ (why|how come|did you laugh|you laughed|you laugh) /)) { const j = JOKES[jokeI++ % JOKES.length]; return R(j, "joke"); }
+  if (has(/ (thanks|thank you|cheers|nice one|good job|well done) /) && words <= 5) return R("Anytime, Jerome.", "happy");
+  if (has(/ (how are you|how.s it going|how do you feel|you ok|you okay) /) && words <= 6) return R(Z.stale ? "A little sleepy. My data is stale, but I'm running." : "Running clean and glowing cyan. Thanks for asking.", Z.stale ? "sleepy" : "happy");
+  if (has(/ (hello|hi|hey|yo|good morning|good evening|good afternoon|sup) /) && words <= 4) return R(daypart() + ", Jerome. Zero here. What do you need?", "happy");
+  if (has(/ (bye|goodbye|see you|goodnight|good night|see ya) /) && words <= 4) return R("Signing off. I'll keep the visor lit.", "sleepy");
+  if (has(/ (love you|you.re cool|awesome|amazing|you.re great) /) && words <= 5) return R("Careful, you'll make my visor blush. Pink is for stale data only.", "happy");
+  if (!KBX) { const l = legacyAnswer(raw); return l || R("I can't load my knowledge base right now, so I can only share the basics. Want me to ask your Brain agent?", "think", { handoff: true }); }
+  let r = null;
+  try { r = kbAnswer(raw); } catch (e) { r = null; }
+  if (!r) return R("I can't load my knowledge base right now. Want me to ask your Brain agent?", "think", { handoff: true });
+  return R(r.text, r.expr, r);
+}
+
+function openHref(h) { try { location.href = h; } catch (e) {} }
+async function handle(raw) {
   raw = (raw || "").trim().slice(0, 240);
   if (!raw) return;
   userBubble(raw);
   unlockAudio();
-  const low = " " + raw.toLowerCase().replace(/[^a-z ]+/g, "").trim() + " ";
+  const low = raw.toLowerCase().replace(/[^a-z' ]+/g, " ").replace(/\s+/g, " ").trim();
   if (pending) {
-    if (/ (yes|yeah|yep|sure|ok|okay|do it|please|go ahead|confirm) /.test(low)) return confirmAsk();
-    if (/ (no|nope|nah|cancel|never mind|nevermind|don.t|dont) /.test(low)) { pending = null; return speakText("Okay, dropped it.", "neutral"); }
+    if (/^(yes|yeah|yep|yup|sure|ok|okay|please|do it|go ahead|confirm|open it|yes please|sure thing|absolutely|alright|go for it)( please| do it| open it| go ahead)?$/.test(low)) {
+      const p = pending; pending = null;
+      if (p.kind === "open") { speakText("Opening " + p.label.replace(/^Open /, "") + ".", "happy", { actions: [{ label: p.label, href: p.href }] }); setTimeout(() => openHref(p.href), 1500); return; }
+      return confirmAsk(p.q);
+    }
+    if (/^(no|nope|nah|cancel|never mind|nevermind|dont|don't|no thanks|not now|stop|no thank you)$/.test(low)) { pending = null; return speakText("Okay, dropped it.", "neutral"); }
     pending = null;
   }
-  const a = (dataPromise && !Z.data) ? null : answer(raw);
-  if (a === null && !Z.data && dataPromise) { dataPromise.then(() => handle(raw)); return; }
-  if (a) { speakText(a.text, a.expr); return; }
-  pending = { q: raw };
-  speakText("I can't answer that locally. Want me to ask your Brain agent?", "think", {
-    actions: [{ label: "Yes", fn: () => confirmAsk() }, { label: "No", ghost: true, fn: () => { pending = null; speakText("Okay, dropped it.", "neutral"); } }],
-  });
+  if ((!KBX || !Z.data) && typeof readyP !== "undefined" && readyP) await Promise.race([readyP, new Promise((r) => setTimeout(r, 4500))]);
+  const a = answer(raw);
+  Z.lastAnswer = a;
+  if (a.handoff) {
+    pending = { kind: "ask", q: raw };
+    speakText(a.text, a.expr || "think", { actions: [{ label: "Yes", fn: () => { const p = pending; pending = null; confirmAsk(p ? p.q : raw); } }, { label: "No", ghost: true, fn: () => { pending = null; speakText("Okay, dropped it.", "neutral"); } }] });
+    return;
+  }
+  if (a.navigate) { speakText(a.text, a.expr, { actions: [{ label: a.link.label, href: a.link.href }] }); setTimeout(() => openHref(a.navigate), 1600); return; }
+  if (a.entry && !a.followup && !a.repeat) { lastEntry = a.entry; lastMore = a.more || null; lastText = a.text; }
+  if (a.offer && a.link) pending = { kind: "open", href: a.link.href, label: a.link.label };
+  const acts = a.link && (a.offer || (a.entry && a.entry.type !== "limit")) ? [{ label: a.link.label, href: a.link.href }] : undefined;
+  speakText(a.text, a.expr, { actions: acts });
 }
 /* Relay: NOT used from this page. The app's signed relay needs an HMAC key derived (HKDF) from the Desk key, which only exists in
    memory after the passcode unlock inside the app. A standalone page can't get it without asking for the passcode or embedding a
    secret, so Zero hands the question over to the in-app Chat instead. Nothing is sent from here. */
-function confirmAsk() {
-  const q = pending && pending.q; pending = null;
+function confirmAsk(q0) {
+  const q = q0 || (pending && pending.q); pending = null;
   try { if (q && navigator.clipboard) navigator.clipboard.writeText(q); } catch (e) {}
   speakText("I can't send that from here. The relay needs your Desk passcode, which I never touch. Open Chat in the app and message Brain." + (q ? " I copied your question." : ""), "think", {
     actions: [{ label: "Open Chat", href: BASE + "chat" }],
@@ -1056,10 +1543,12 @@ stage.addEventListener("click", () => { if (!Z.gl) onTap(); });
 $("wake").addEventListener("click", onTap);
 document.addEventListener("pointerup", (e) => { if (!greeted && e.target.closest && e.target.closest("#mic")) return; }, true);
 
-window.__zero = { Z, answer, handle, greetingText, summarize, loadData, applyData, greet, speakText, ageWords, setExpr, startFx, poke, onTap };
+window.__zero = { Z, answer, handle, kbAnswer, getKB: () => KBX, getReady: () => readyP, rank: (q) => ZK.rank(KBX, q), greetingText, summarize, loadData, applyData, greet, speakText, ageWords, setExpr, startFx, poke, onTap };
 const rafShared = (() => { let last = performance.now(); return function loop(ms) { if (!Z.gl) { tickShared(ms, Math.min(0.05, (ms - last) / 1000)); } last = ms; requestAnimationFrame(loop); }; })();
 if (!(window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches) || true) requestAnimationFrame(rafShared);
+kbPromise = loadKB();
 refresh();
+const readyP = Promise.all([kbPromise, dataPromise]);
 init3D().then((ok) => { if (!ok) console.info("still-image mode"); }).catch((e) => console.warn("3D error", e));
 if ("serviceWorker" in navigator) { /* intentionally not registering a worker: this page is a plain static page; the app's worker (if any) already covers the scope */ }
 setInterval(() => { if (!document.hidden) refresh(); }, 5 * 60 * 1000);
