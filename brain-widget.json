@@ -1,31 +1,31 @@
 {
  "schema": "brain-widget/1",
- "built_ct": "Oct 27, 9:28 AM",
+ "built_ct": "Oct 27, 1:58 PM",
  "neural": {
-  "nodes": 139,
-  "links": 65,
+  "nodes": 142,
+  "links": 68,
   "agents": 11,
-  "memory": 95,
+  "memory": 97,
   "kinds": {
    "meme": 40,
-   "note": 29,
-   "xradar": 26
+   "note": 30,
+   "xradar": 27
   },
-  "newest_ts": 1793109180
+  "newest_ts": 1793126880
  },
  "second_brain": {
-  "notes": 29,
+  "notes": 30,
   "folders": 4,
-  "links": 65,
+  "links": 68,
   "topics": 14,
   "routines": 4,
-  "attention": 5,
+  "attention": 6,
   "rules": 9,
-  "newest_ts": 1793108928
+  "newest_ts": 1793123141
  },
  "pipeline": {
-  "decisions": 109,
-  "events": 95,
+  "decisions": 111,
+  "events": 97,
   "open": 3,
   "decided": 1,
   "gate": 0.25,
