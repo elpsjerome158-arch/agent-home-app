@@ -1,6 +1,6 @@
 {
  "schema": "brain-insights/1",
- "generated_at": "2026-10-27 20:24:26 CT",
+ "generated_at": "2026-10-28 08:25:35 CT",
  "insights": [
   {
    "text": "14 of 15 rejected setups have no decision score (P-002, P-003, P-004, P-005, P-006, P-007, P-009, P-011, P-015, P-016, P-018, P-019, P-020, P-022); scheduled cycles don't poll Setup Scout, so Devil's [file] Coach never review",
@@ -8,34 +8,39 @@
    "priority": 1
   },
   {
-   "text": "IT crash log: 23 entries, 1 open (Box files restored around 12:19-12:20 AM CT Oct 27 ([file] logins redone); `/[file]` has no `refs/`, so `git` says \"not a git repository\" in the app source folder)",
-   "source": "IT Agent",
-   "priority": 2
-  },
-  {
-   "text": "pump.fun feed: [file] scanned coins FAIL filters",
-   "source": "brain hub",
-   "priority": 3
-  },
-  {
-   "text": "24h: SOL 101.49 (+0.80%), BTC 80,986.8 (+1.10%), ETH 2,353.46 (+1.75%)",
-   "source": "brain hub",
-   "priority": 3
-  },
-  {
-   "text": "RSI(14) daily at 2026-10-27 16:52 CT: 7 overbought (BOXX, EGBN, ISRG, LMT, SCHD), 25 oversold (BAC, BTDR, GE, GEMI, GOOGL) of 188",
+   "text": "NEEDS JEROME — STALE: no baseline RSI snapshot for the 2026-10-23 12:41 CT slot (checked 2026-10-27 20:53:12 CT); last valid result stays in use, labeled stale",
    "source": "RSI tracker",
-   "priority": 3
+   "priority": 1
   },
   {
-   "text": "Desk graded trades [file] toward first review; live gate needs 50",
-   "source": "Trade Journal Bot",
-   "priority": 4
+   "text": "NEEDS JEROME — STALE: no baseline RSI snapshot for the 2026-10-23 16:41 CT slot (checked 2026-10-27 20:53:12 CT); last valid result stays in use, labeled stale",
+   "source": "RSI tracker",
+   "priority": 1
   },
   {
-   "text": "Top Meme Scout blocker: 'community_or_tweet_with_community' (4873 of 88555 rows)",
-   "source": "Meme Scout",
-   "priority": 4
+   "text": "NEEDS JEROME — STALE: no baseline RSI snapshot for the 2026-10-23 20:41 CT slot (checked 2026-10-27 20:53:12 CT); last valid result stays in use, labeled stale",
+   "source": "RSI tracker",
+   "priority": 1
+  },
+  {
+   "text": "NEEDS JEROME — STALE: no baseline RSI snapshot for the 2026-10-24 00:41 CT slot (checked 2026-10-27 20:53:12 CT); last valid result stays in use, labeled stale",
+   "source": "RSI tracker",
+   "priority": 1
+  },
+  {
+   "text": "NEEDS JEROME — STALE: no baseline RSI snapshot for the 2026-10-24 04:41 CT slot (checked 2026-10-27 20:53:12 CT); last valid result stays in use, labeled stale",
+   "source": "RSI tracker",
+   "priority": 1
+  },
+  {
+   "text": "NEEDS JEROME — STALE: no baseline RSI snapshot for the 2026-10-24 08:41 CT slot (checked 2026-10-27 20:53:12 CT); last valid result stays in use, labeled stale",
+   "source": "RSI tracker",
+   "priority": 1
+  },
+  {
+   "text": "NEEDS JEROME — STALE: no baseline RSI snapshot for the 2026-10-24 12:41 CT slot (checked 2026-10-27 20:53:12 CT); last valid result stays in use, labeled stale",
+   "source": "RSI tracker",
+   "priority": 1
   }
  ]
 }
