@@ -1,9 +1,9 @@
 {
  "schema": "brain-insights/1",
- "generated_at": "2026-10-29 08:21:21 CT",
+ "generated_at": "2026-10-29 12:17:20 CT",
  "insights": [
   {
-   "text": "15 of 16 rejected setups have no decision score (P-002, P-003, P-004, P-005, P-006, P-007, P-009, P-011, P-015, P-016, P-018, P-019, P-020, P-022, P-023); scheduled cycles don't poll Setup Scout, so Devil's [file] Coach never review",
+   "text": "16 of 17 rejected setups have no decision score (P-002, P-003, P-004, P-005, P-006, P-007, P-009, P-011, P-015, P-016, P-018, P-019, P-020, P-022, P-023, P-025); scheduled cycles don't poll Setup Scout, so Devil's [file] Coach never review",
    "source": "Trade Journal Bot",
    "priority": 1
   },
