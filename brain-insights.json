@@ -1,6 +1,6 @@
 {
  "schema": "brain-insights/1",
- "generated_at": "2026-11-09 20:22:50 CT",
+ "generated_at": "2026-11-10 08:19:36 CT",
  "insights": [
   {
    "text": "24 of 25 rejected setups have no decision score (P-002, P-003, P-004, P-005, P-006, P-007, P-009, P-011, P-015, P-016, P-018, P-019, P-020, P-022, P-023, P-025, P-027, P-028, P-030, P-031, P-032, P-033, P-034, P-036); scheduled cycles don't",
